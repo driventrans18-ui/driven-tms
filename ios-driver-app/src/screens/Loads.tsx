@@ -102,7 +102,7 @@ export function Loads({ driver }: { driver: Driver }) {
         </div>
       )}
 
-      {open && <LoadSheet load={open} onClose={() => setOpen(null)} />}
+      {open && <LoadSheet load={open} driverId={driver.id} onClose={() => setOpen(null)} />}
       {newLoadOpen && <NewLoadSheet driverId={driver.id} onClose={() => setNewLoadOpen(false)} />}
     </div>
   )
@@ -110,9 +110,31 @@ export function Loads({ driver }: { driver: Driver }) {
 
 // ── Load detail sheet ────────────────────────────────────────────────────────
 
-function LoadSheet({ load, onClose }: { load: LoadDetail; onClose: () => void }) {
+function LoadSheet({ load, driverId, onClose }: { load: LoadDetail; driverId: string; onClose: () => void }) {
+  const qc = useQueryClient()
   const origin = [load.origin_city, load.origin_state].filter(Boolean).join(', ')
   const dest   = [load.dest_city,   load.dest_state].filter(Boolean).join(', ')
+
+  const deleteLoad = useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase.from('loads').delete().eq('id', load.id)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['my-loads', driverId] })
+      qc.invalidateQueries({ queryKey: ['active-load', driverId] })
+      qc.invalidateQueries({ queryKey: ['calendar-loads', driverId] })
+      onClose()
+    },
+    onError: (e: Error) => alert(e.message),
+  })
+
+  const confirmDelete = () => {
+    const label = load.load_number || `#${load.id.slice(0, 8)}`
+    if (confirm(`Delete load ${label}? This cannot be undone.`)) {
+      deleteLoad.mutate()
+    }
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-end">
@@ -166,6 +188,14 @@ function LoadSheet({ load, onClose }: { load: LoadDetail; onClose: () => void })
             Call {load.brokers.name}
           </a>
         )}
+
+        <button
+          onClick={confirmDelete}
+          disabled={deleteLoad.isPending}
+          className="w-full mt-3 py-3 rounded-xl text-red-600 text-base font-semibold active:bg-red-50 disabled:opacity-50 cursor-pointer"
+        >
+          {deleteLoad.isPending ? 'Deleting…' : 'Delete load'}
+        </button>
       </div>
     </div>
   )
