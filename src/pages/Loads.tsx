@@ -255,6 +255,145 @@ function LoadModal({ onClose, editing }: { onClose: () => void; editing: Load | 
   )
 }
 
+// ── Documents ─────────────────────────────────────────────────────────────────
+
+type DocKind = 'rate_con' | 'pod' | 'other'
+
+interface LoadDocument {
+  id: string
+  load_id: string
+  kind: DocKind
+  storage_path: string
+  file_name: string
+  mime_type: string | null
+  file_size: number | null
+  created_at: string
+}
+
+const KIND_LABEL: Record<DocKind, string> = {
+  rate_con: 'Rate',
+  pod:      'POD',
+  other:    'Other',
+}
+
+const BUCKET = 'load-documents'
+
+function LoadDocuments({ loadId }: { loadId: string }) {
+  const qc = useQueryClient()
+  const [error, setError] = useState<string | null>(null)
+  const [uploadingKind, setUploadingKind] = useState<DocKind | null>(null)
+
+  const { data: docs = [] } = useQuery({
+    queryKey: ['load-documents', loadId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('load_documents')
+        .select('*')
+        .eq('load_id', loadId)
+        .order('created_at', { ascending: false })
+      if (error) throw error
+      return data as LoadDocument[]
+    },
+  })
+
+  const upload = async (file: File, kind: DocKind) => {
+    setError(null)
+    setUploadingKind(kind)
+    try {
+      const path = `${loadId}/${crypto.randomUUID()}-${file.name}`
+      const { error: upErr } = await supabase.storage.from(BUCKET).upload(path, file, {
+        contentType: file.type || undefined,
+      })
+      if (upErr) throw upErr
+      const { error: dbErr } = await supabase.from('load_documents').insert({
+        load_id: loadId,
+        kind,
+        storage_path: path,
+        file_name: file.name,
+        mime_type: file.type || null,
+        file_size: file.size,
+      })
+      if (dbErr) throw dbErr
+      qc.invalidateQueries({ queryKey: ['load-documents', loadId] })
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setUploadingKind(null)
+    }
+  }
+
+  const openDoc = async (doc: LoadDocument) => {
+    setError(null)
+    const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(doc.storage_path, 3600)
+    if (error) { setError(error.message); return }
+    window.open(data.signedUrl, '_blank')
+  }
+
+  const deleteDoc = async (doc: LoadDocument) => {
+    if (!confirm(`Delete ${doc.file_name}?`)) return
+    setError(null)
+    const { error: stErr } = await supabase.storage.from(BUCKET).remove([doc.storage_path])
+    if (stErr) { setError(stErr.message); return }
+    const { error: dbErr } = await supabase.from('load_documents').delete().eq('id', doc.id)
+    if (dbErr) { setError(dbErr.message); return }
+    qc.invalidateQueries({ queryKey: ['load-documents', loadId] })
+  }
+
+  function UploadButton({ kind, label }: { kind: DocKind; label: string }) {
+    const id = `load-doc-upload-${kind}-${loadId}`
+    const active = uploadingKind === kind
+    return (
+      <>
+        <input id={id} type="file" className="hidden" disabled={uploadingKind !== null}
+          onChange={e => {
+            const f = e.target.files?.[0]
+            e.target.value = ''
+            if (f) upload(f, kind)
+          }}
+        />
+        <label htmlFor={id}
+          className={`flex-1 px-2 py-1.5 text-xs rounded-lg border text-center transition-colors ${
+            uploadingKind !== null ? 'border-gray-100 text-gray-300 cursor-not-allowed' :
+              'border-gray-200 text-gray-700 hover:bg-gray-50 cursor-pointer'
+          }`}>
+          {active ? 'Uploading…' : label}
+        </label>
+      </>
+    )
+  }
+
+  return (
+    <div>
+      <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">Documents</p>
+      <div className="flex gap-2 mb-3">
+        <UploadButton kind="rate_con" label="+ Rate Con" />
+        <UploadButton kind="pod"      label="+ POD" />
+        <UploadButton kind="other"    label="+ Other" />
+      </div>
+      {error && <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2 mb-2">{error}</p>}
+      {docs.length === 0 ? (
+        <p className="text-xs text-gray-400">No documents yet.</p>
+      ) : (
+        <ul className="space-y-1.5">
+          {docs.map(doc => (
+            <li key={doc.id} className="flex items-center gap-2 text-sm">
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 uppercase tracking-wide flex-shrink-0">
+                {KIND_LABEL[doc.kind]}
+              </span>
+              <button onClick={() => openDoc(doc)}
+                className="flex-1 text-left text-gray-700 hover:text-[#c8410a] truncate cursor-pointer">
+                {doc.file_name}
+              </button>
+              <button onClick={() => deleteDoc(doc)} aria-label="Delete document"
+                className="text-gray-300 hover:text-red-600 text-xs cursor-pointer flex-shrink-0">✕</button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
 // ── Detail Panel ──────────────────────────────────────────────────────────────
 
 function DetailPanel({ load, onClose, onEdit, onDelete, deleting }: {
@@ -314,6 +453,8 @@ function DetailPanel({ load, onClose, onEdit, onDelete, deleting }: {
               ))}
             </dl>
           </div>
+
+          <LoadDocuments loadId={load.id} />
         </div>
 
         <div className="flex gap-2 px-5 py-3 border-t border-gray-100">
