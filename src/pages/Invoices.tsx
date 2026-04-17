@@ -10,6 +10,7 @@ interface Invoice {
   invoice_number: string | null
   load_id: string | null
   broker_id: string | null
+  customer_id: string | null
   amount: number | null
   issued_date: string | null
   due_date: string | null
@@ -19,6 +20,7 @@ interface Invoice {
   created_at: string
   loads: { id: string; load_number: string | null; origin_city: string | null; dest_city: string | null } | null
   brokers: { id: string; name: string } | null
+  customers: { id: string; name: string } | null
 }
 
 const STATUS_CONFIG: Record<InvoiceStatus, string> = {
@@ -49,10 +51,14 @@ function Detail({ label, value }: { label: string; value: string | number | null
 
 function InvoiceModal({ onClose, editing }: { onClose: () => void; editing: Invoice | null }) {
   const qc = useQueryClient()
+  const [billTo, setBillTo] = useState<'broker' | 'customer'>(
+    editing?.customer_id ? 'customer' : 'broker'
+  )
   const [form, setForm] = useState({
     invoice_number: editing?.invoice_number ?? '',
     load_id:        editing?.load_id        ?? '',
     broker_id:      editing?.broker_id      ?? '',
+    customer_id:    editing?.customer_id    ?? '',
     amount:         editing?.amount != null ? String(editing.amount) : '',
     issued_date:    editing?.issued_date    ?? '',
     due_date:       editing?.due_date       ?? '',
@@ -70,13 +76,18 @@ function InvoiceModal({ onClose, editing }: { onClose: () => void; editing: Invo
     const { data } = await supabase.from('brokers').select('id, name').order('name')
     return (data ?? []) as Array<{ id: string; name: string }>
   }})
+  const { data: customers = [] } = useQuery({ queryKey: ['customers-simple'], queryFn: async () => {
+    const { data } = await supabase.from('customers').select('id, name').order('name')
+    return (data ?? []) as Array<{ id: string; name: string }>
+  }})
 
   const mutation = useMutation({
     mutationFn: async () => {
       const payload = {
         invoice_number: form.invoice_number || null,
         load_id: form.load_id || null,
-        broker_id: form.broker_id || null,
+        broker_id: billTo === 'broker' ? (form.broker_id || null) : null,
+        customer_id: billTo === 'customer' ? (form.customer_id || null) : null,
         amount: form.amount ? Number(form.amount) : null,
         issued_date: form.issued_date || null,
         due_date: form.due_date || null,
@@ -128,12 +139,32 @@ function InvoiceModal({ onClose, editing }: { onClose: () => void; editing: Invo
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Broker</label>
-            <select value={form.broker_id} onChange={e => set('broker_id', e.target.value)}
-              className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#c8410a]/20 focus:border-[#c8410a]">
-              <option value="">— Select broker —</option>
-              {brokers.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-            </select>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Bill to</label>
+            <div className="grid grid-cols-2 gap-1 bg-gray-100 rounded-lg p-1 mb-2">
+              {(['broker', 'customer'] as const).map(k => {
+                const on = billTo === k
+                return (
+                  <button key={k} type="button" onClick={() => setBillTo(k)}
+                    className="py-1.5 rounded-md text-xs font-medium transition-colors cursor-pointer"
+                    style={on ? { background: '#c8410a', color: 'white' } : { color: '#6b7280' }}>
+                    {k === 'broker' ? 'Broker' : 'Customer'}
+                  </button>
+                )
+              })}
+            </div>
+            {billTo === 'broker' ? (
+              <select value={form.broker_id} onChange={e => set('broker_id', e.target.value)}
+                className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#c8410a]/20 focus:border-[#c8410a]">
+                <option value="">— Select broker —</option>
+                {brokers.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+              </select>
+            ) : (
+              <select value={form.customer_id} onChange={e => set('customer_id', e.target.value)}
+                className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#c8410a]/20 focus:border-[#c8410a]">
+                <option value="">— Select customer —</option>
+                {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            )}
           </div>
 
           <div>
@@ -192,7 +223,7 @@ function DetailPanel({ invoice, onClose, onEdit, onDelete, deleting }: {
           <StatusBadge status={invoice.status} />
           <dl className="grid grid-cols-2 gap-x-4 gap-y-3">
             <Detail label="Amount" value={fmt(invoice.amount)} />
-            <Detail label="Broker" value={invoice.brokers?.name} />
+            <Detail label="Bill to" value={invoice.customers?.name ?? invoice.brokers?.name} />
             <Detail label="Issued" value={fmtDate(invoice.issued_date)} />
             <Detail label="Due" value={fmtDate(invoice.due_date)} />
             <Detail label="Paid" value={fmtDate(invoice.paid_date)} />
@@ -226,7 +257,7 @@ export function Invoices() {
   const { data: invoices = [], isLoading } = useQuery({
     queryKey: ['invoices'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('invoices').select('*, loads(id, load_number, origin_city, dest_city), brokers(id, name)').order('created_at', { ascending: false })
+      const { data, error } = await supabase.from('invoices').select('*, loads(id, load_number, origin_city, dest_city), brokers(id, name), customers(id, name)').order('created_at', { ascending: false })
       if (error) throw error
       return data as Invoice[]
     },
@@ -290,7 +321,7 @@ export function Invoices() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-100">
-                  {['Invoice #', 'Load', 'Broker', 'Amount', 'Issued', 'Due', 'Status'].map(h => (
+                  {['Invoice #', 'Load', 'Bill to', 'Amount', 'Issued', 'Due', 'Status'].map(h => (
                     <th key={h} className="text-left px-4 py-3 text-xs font-medium text-gray-400 uppercase tracking-wide whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
@@ -301,7 +332,7 @@ export function Invoices() {
                     className={`cursor-pointer transition-colors ${selected?.id === inv.id ? 'bg-[#c8410a]/5' : 'hover:bg-gray-50'}`}>
                     <td className="px-4 py-3 font-medium text-gray-900">{inv.invoice_number || `#${inv.id.slice(0,8)}`}</td>
                     <td className="px-4 py-3 text-gray-600">{inv.loads?.load_number ?? (inv.load_id ? `#${inv.load_id.slice(0,8)}` : '—')}</td>
-                    <td className="px-4 py-3 text-gray-600">{inv.brokers?.name ?? '—'}</td>
+                    <td className="px-4 py-3 text-gray-600">{inv.customers?.name ?? inv.brokers?.name ?? '—'}</td>
                     <td className="px-4 py-3 font-medium text-gray-900">{fmt(inv.amount)}</td>
                     <td className="px-4 py-3 text-gray-500">{fmtDate(inv.issued_date)}</td>
                     <td className="px-4 py-3 text-gray-500">{fmtDate(inv.due_date)}</td>
