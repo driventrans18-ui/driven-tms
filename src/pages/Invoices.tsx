@@ -47,9 +47,18 @@ function Detail({ label, value }: { label: string; value: string | number | null
   )
 }
 
-function NewInvoiceModal({ onClose }: { onClose: () => void }) {
+function InvoiceModal({ onClose, editing }: { onClose: () => void; editing: Invoice | null }) {
   const qc = useQueryClient()
-  const [form, setForm] = useState({ invoice_number: '', load_id: '', broker_id: '', amount: '', issued_date: '', due_date: '', status: 'Draft' as InvoiceStatus, notes: '' })
+  const [form, setForm] = useState({
+    invoice_number: editing?.invoice_number ?? '',
+    load_id:        editing?.load_id        ?? '',
+    broker_id:      editing?.broker_id      ?? '',
+    amount:         editing?.amount != null ? String(editing.amount) : '',
+    issued_date:    editing?.issued_date    ?? '',
+    due_date:       editing?.due_date       ?? '',
+    status:         (editing?.status ?? 'Draft') as InvoiceStatus,
+    notes:          editing?.notes          ?? '',
+  })
   const [error, setError] = useState<string | null>(null)
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }))
 
@@ -64,7 +73,7 @@ function NewInvoiceModal({ onClose }: { onClose: () => void }) {
 
   const mutation = useMutation({
     mutationFn: async () => {
-      const { error } = await supabase.from('invoices').insert({
+      const payload = {
         invoice_number: form.invoice_number || null,
         load_id: form.load_id || null,
         broker_id: form.broker_id || null,
@@ -73,7 +82,10 @@ function NewInvoiceModal({ onClose }: { onClose: () => void }) {
         due_date: form.due_date || null,
         status: form.status,
         notes: form.notes || null,
-      })
+      }
+      const { error } = editing
+        ? await supabase.from('invoices').update(payload).eq('id', editing.id)
+        : await supabase.from('invoices').insert(payload)
       if (error) throw error
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['invoices'] }); qc.invalidateQueries({ queryKey: ['dashboard-stats'] }); onClose() },
@@ -85,7 +97,7 @@ function NewInvoiceModal({ onClose }: { onClose: () => void }) {
       <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={onClose} />
       <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-md mx-4 p-6">
         <div className="flex items-center justify-between mb-5">
-          <h2 className="text-base font-semibold text-gray-900">New Invoice</h2>
+          <h2 className="text-base font-semibold text-gray-900">{editing ? 'Edit Invoice' : 'New Invoice'}</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 cursor-pointer">✕</button>
         </div>
         <div className="space-y-3">
@@ -154,7 +166,7 @@ function NewInvoiceModal({ onClose }: { onClose: () => void }) {
           <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 cursor-pointer">Cancel</button>
           <button onClick={() => mutation.mutate()} disabled={mutation.isPending}
             className="px-4 py-2 text-sm text-white rounded-lg disabled:opacity-50 cursor-pointer" style={{ background: '#c8410a' }}>
-            {mutation.isPending ? 'Saving…' : 'Create Invoice'}
+            {mutation.isPending ? 'Saving…' : editing ? 'Save Changes' : 'Create Invoice'}
           </button>
         </div>
       </div>
@@ -162,7 +174,9 @@ function NewInvoiceModal({ onClose }: { onClose: () => void }) {
   )
 }
 
-function DetailPanel({ invoice, onClose }: { invoice: Invoice; onClose: () => void }) {
+function DetailPanel({ invoice, onClose, onEdit, onDelete, deleting }: {
+  invoice: Invoice; onClose: () => void; onEdit: () => void; onDelete: () => void; deleting: boolean
+}) {
   return (
     <>
       <div className="fixed inset-0 z-30 bg-black/10" onClick={onClose} />
@@ -191,15 +205,23 @@ function DetailPanel({ invoice, onClose }: { invoice: Invoice; onClose: () => vo
             </div>
           )}
         </div>
+        <div className="flex gap-2 px-5 py-3 border-t border-gray-100">
+          <button onClick={onEdit} className="flex-1 px-3 py-2 text-sm rounded-lg border border-gray-200 hover:bg-gray-50 cursor-pointer">Edit</button>
+          <button onClick={onDelete} disabled={deleting}
+            className="flex-1 px-3 py-2 text-sm rounded-lg text-red-600 border border-red-200 hover:bg-red-50 disabled:opacity-50 cursor-pointer">
+            {deleting ? 'Deleting…' : 'Delete'}
+          </button>
+        </div>
       </aside>
     </>
   )
 }
 
 export function Invoices() {
+  const qc = useQueryClient()
   const [tab, setTab] = useState<InvoiceStatus | 'All'>('All')
   const [selected, setSelected] = useState<Invoice | null>(null)
-  const [showModal, setShowModal] = useState(false)
+  const [modalState, setModalState] = useState<{ open: boolean; editing: Invoice | null }>({ open: false, editing: null })
 
   const { data: invoices = [], isLoading } = useQuery({
     queryKey: ['invoices'],
@@ -209,6 +231,26 @@ export function Invoices() {
       return data as Invoice[]
     },
   })
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from('invoices').delete().eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['invoices'] })
+      qc.invalidateQueries({ queryKey: ['dashboard-stats'] })
+      setSelected(null)
+    },
+    onError: (e: Error) => alert(e.message),
+  })
+
+  const handleDelete = (invoice: Invoice) => {
+    const label = invoice.invoice_number || `#${invoice.id.slice(0, 8)}`
+    if (confirm(`Delete invoice ${label}? This cannot be undone.`)) {
+      deleteMutation.mutate(invoice.id)
+    }
+  }
 
   const filtered = tab === 'All' ? invoices : invoices.filter(i => i.status === tab)
   const counts = TABS.reduce((acc, t) => { acc[t] = t === 'All' ? invoices.length : invoices.filter(i => i.status === t).length; return acc }, {} as Record<string, number>)
@@ -221,7 +263,7 @@ export function Invoices() {
           <h1 className="text-xl font-semibold text-gray-900">Invoices</h1>
           <p className="text-sm text-gray-400 mt-0.5">{invoices.length} total · {fmt(totalFiltered)} showing</p>
         </div>
-        <button onClick={() => setShowModal(true)}
+        <button onClick={() => setModalState({ open: true, editing: null })}
           className="flex items-center gap-1.5 px-3.5 py-2 text-sm font-medium text-white rounded-lg cursor-pointer" style={{ background: '#c8410a' }}>
           <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
           New Invoice
@@ -272,8 +314,21 @@ export function Invoices() {
         )}
       </div>
 
-      {selected && <DetailPanel invoice={selected} onClose={() => setSelected(null)} />}
-      {showModal && <NewInvoiceModal onClose={() => setShowModal(false)} />}
+      {selected && (
+        <DetailPanel
+          invoice={selected}
+          onClose={() => setSelected(null)}
+          onEdit={() => setModalState({ open: true, editing: selected })}
+          onDelete={() => handleDelete(selected)}
+          deleting={deleteMutation.isPending}
+        />
+      )}
+      {modalState.open && (
+        <InvoiceModal
+          editing={modalState.editing}
+          onClose={() => setModalState({ open: false, editing: null })}
+        />
+      )}
     </AppShell>
   )
 }

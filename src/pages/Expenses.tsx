@@ -48,9 +48,17 @@ function Detail({ label, value }: { label: string; value: string | number | null
   )
 }
 
-function NewExpenseModal({ onClose }: { onClose: () => void }) {
+function ExpenseModal({ onClose, editing }: { onClose: () => void; editing: Expense | null }) {
   const qc = useQueryClient()
-  const [form, setForm] = useState({ expense_date: '', category: 'Fuel', amount: '', vendor: '', notes: '', truck_id: '', load_id: '' })
+  const [form, setForm] = useState({
+    expense_date: editing?.expense_date ?? '',
+    category:     editing?.category     ?? 'Fuel',
+    amount:       editing?.amount != null ? String(editing.amount) : '',
+    vendor:       editing?.vendor       ?? '',
+    notes:        editing?.notes        ?? '',
+    truck_id:     editing?.truck_id     ?? '',
+    load_id:      editing?.load_id      ?? '',
+  })
   const [error, setError] = useState<string | null>(null)
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }))
 
@@ -61,7 +69,7 @@ function NewExpenseModal({ onClose }: { onClose: () => void }) {
 
   const mutation = useMutation({
     mutationFn: async () => {
-      const { error } = await supabase.from('expenses').insert({
+      const payload = {
         expense_date: form.expense_date || null,
         category: form.category,
         amount: form.amount ? Number(form.amount) : null,
@@ -69,7 +77,10 @@ function NewExpenseModal({ onClose }: { onClose: () => void }) {
         notes: form.notes || null,
         truck_id: form.truck_id || null,
         load_id: form.load_id || null,
-      })
+      }
+      const { error } = editing
+        ? await supabase.from('expenses').update(payload).eq('id', editing.id)
+        : await supabase.from('expenses').insert(payload)
       if (error) throw error
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['expenses'] }); onClose() },
@@ -81,7 +92,7 @@ function NewExpenseModal({ onClose }: { onClose: () => void }) {
       <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={onClose} />
       <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-md mx-4 p-6">
         <div className="flex items-center justify-between mb-5">
-          <h2 className="text-base font-semibold text-gray-900">New Expense</h2>
+          <h2 className="text-base font-semibold text-gray-900">{editing ? 'Edit Expense' : 'New Expense'}</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 cursor-pointer">✕</button>
         </div>
         <div className="space-y-3">
@@ -128,7 +139,7 @@ function NewExpenseModal({ onClose }: { onClose: () => void }) {
           <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 cursor-pointer">Cancel</button>
           <button onClick={() => mutation.mutate()} disabled={mutation.isPending}
             className="px-4 py-2 text-sm text-white rounded-lg disabled:opacity-50 cursor-pointer" style={{ background: '#c8410a' }}>
-            {mutation.isPending ? 'Saving…' : 'Add Expense'}
+            {mutation.isPending ? 'Saving…' : editing ? 'Save Changes' : 'Add Expense'}
           </button>
         </div>
       </div>
@@ -136,7 +147,9 @@ function NewExpenseModal({ onClose }: { onClose: () => void }) {
   )
 }
 
-function DetailPanel({ expense, onClose }: { expense: Expense; onClose: () => void }) {
+function DetailPanel({ expense, onClose, onEdit, onDelete, deleting }: {
+  expense: Expense; onClose: () => void; onEdit: () => void; onDelete: () => void; deleting: boolean
+}) {
   return (
     <>
       <div className="fixed inset-0 z-30 bg-black/10" onClick={onClose} />
@@ -165,14 +178,22 @@ function DetailPanel({ expense, onClose }: { expense: Expense; onClose: () => vo
             </div>
           )}
         </div>
+        <div className="flex gap-2 px-5 py-3 border-t border-gray-100">
+          <button onClick={onEdit} className="flex-1 px-3 py-2 text-sm rounded-lg border border-gray-200 hover:bg-gray-50 cursor-pointer">Edit</button>
+          <button onClick={onDelete} disabled={deleting}
+            className="flex-1 px-3 py-2 text-sm rounded-lg text-red-600 border border-red-200 hover:bg-red-50 disabled:opacity-50 cursor-pointer">
+            {deleting ? 'Deleting…' : 'Delete'}
+          </button>
+        </div>
       </aside>
     </>
   )
 }
 
 export function Expenses() {
+  const qc = useQueryClient()
   const [selected, setSelected] = useState<Expense | null>(null)
-  const [showModal, setShowModal] = useState(false)
+  const [modalState, setModalState] = useState<{ open: boolean; editing: Expense | null }>({ open: false, editing: null })
   const [catFilter, setCatFilter] = useState('All')
 
   const { data: expenses = [], isLoading } = useQuery({
@@ -183,6 +204,25 @@ export function Expenses() {
       return data as Expense[]
     },
   })
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from('expenses').delete().eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['expenses'] })
+      setSelected(null)
+    },
+    onError: (e: Error) => alert(e.message),
+  })
+
+  const handleDelete = (expense: Expense) => {
+    const label = [fmt(expense.amount), expense.category].filter(Boolean).join(' · ') || 'this expense'
+    if (confirm(`Delete ${label}? This cannot be undone.`)) {
+      deleteMutation.mutate(expense.id)
+    }
+  }
 
   const cats = ['All', ...CATEGORIES]
   const filtered = catFilter === 'All' ? expenses : expenses.filter(e => e.category === catFilter)
@@ -195,7 +235,7 @@ export function Expenses() {
           <h1 className="text-xl font-semibold text-gray-900">Expenses</h1>
           <p className="text-sm text-gray-400 mt-0.5">{filtered.length} records · {fmt(total)} total</p>
         </div>
-        <button onClick={() => setShowModal(true)}
+        <button onClick={() => setModalState({ open: true, editing: null })}
           className="flex items-center gap-1.5 px-3.5 py-2 text-sm font-medium text-white rounded-lg cursor-pointer" style={{ background: '#c8410a' }}>
           <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
           Add Expense
@@ -243,8 +283,21 @@ export function Expenses() {
         )}
       </div>
 
-      {selected && <DetailPanel expense={selected} onClose={() => setSelected(null)} />}
-      {showModal && <NewExpenseModal onClose={() => setShowModal(false)} />}
+      {selected && (
+        <DetailPanel
+          expense={selected}
+          onClose={() => setSelected(null)}
+          onEdit={() => setModalState({ open: true, editing: selected })}
+          onDelete={() => handleDelete(selected)}
+          deleting={deleteMutation.isPending}
+        />
+      )}
+      {modalState.open && (
+        <ExpenseModal
+          editing={modalState.editing}
+          onClose={() => setModalState({ open: false, editing: null })}
+        />
+      )}
     </AppShell>
   )
 }

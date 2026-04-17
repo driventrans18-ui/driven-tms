@@ -19,6 +19,9 @@ interface Load {
   rate: number | null
   status: LoadStatus
   eta: string | null
+  broker_id: string | null
+  driver_id: string | null
+  truck_id: string | null
   created_at: string
   brokers: { id: string; name: string } | null
   drivers: { id: string; first_name: string | null; last_name: string | null } | null
@@ -80,24 +83,28 @@ function Field({ label, value, onChange, placeholder = '', type = 'text', requir
   )
 }
 
-// ── New Load Modal ────────────────────────────────────────────────────────────
+// ── Load Modal ────────────────────────────────────────────────────────────────
 
-function NewLoadModal({ onClose }: { onClose: () => void }) {
+function LoadModal({ onClose, editing }: { onClose: () => void; editing: Load | null }) {
   const qc = useQueryClient()
   const [form, setForm] = useState({
-    load_number: '',
-    origin_city: '', origin_state: '',
-    dest_city: '',   dest_state: '',
-    load_type: 'Dry Van',
-    miles: '', rate: '',
-    status: 'Pending' as LoadStatus,
-    eta: '',
-    broker_id: '', driver_id: '', truck_id: '',
+    load_number:  editing?.load_number  ?? '',
+    origin_city:  editing?.origin_city  ?? '',
+    origin_state: editing?.origin_state ?? '',
+    dest_city:    editing?.dest_city    ?? '',
+    dest_state:   editing?.dest_state   ?? '',
+    load_type:    editing?.load_type    ?? 'Dry Van',
+    miles:        editing?.miles != null ? String(editing.miles) : '',
+    rate:         editing?.rate  != null ? String(editing.rate)  : '',
+    status:       (editing?.status ?? 'Pending') as LoadStatus,
+    eta:          editing?.eta          ?? '',
+    broker_id:    editing?.broker_id    ?? '',
+    driver_id:    editing?.driver_id    ?? '',
+    truck_id:     editing?.truck_id     ?? '',
   })
   const [error, setError] = useState<string | null>(null)
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }))
 
-  // Fetch dropdown options
   const { data: brokers = [] } = useQuery({
     queryKey: ['brokers-simple'],
     queryFn: async () => {
@@ -122,21 +129,24 @@ function NewLoadModal({ onClose }: { onClose: () => void }) {
 
   const mutation = useMutation({
     mutationFn: async () => {
-      const { error } = await supabase.from('loads').insert({
+      const payload = {
         load_number:  form.load_number  || null,
         origin_city:  form.origin_city  || null,
         origin_state: form.origin_state || null,
         dest_city:    form.dest_city    || null,
         dest_state:   form.dest_state   || null,
         load_type:    form.load_type,
-        miles:        form.miles  ? Number(form.miles)  : null,
-        rate:         form.rate   ? Number(form.rate)   : null,
+        miles:        form.miles ? Number(form.miles) : null,
+        rate:         form.rate  ? Number(form.rate)  : null,
         status:       form.status,
-        eta:          form.eta    || null,
+        eta:          form.eta   || null,
         broker_id:    form.broker_id || null,
         driver_id:    form.driver_id || null,
         truck_id:     form.truck_id  || null,
-      })
+      }
+      const { error } = editing
+        ? await supabase.from('loads').update(payload).eq('id', editing.id)
+        : await supabase.from('loads').insert(payload)
       if (error) throw error
     },
     onSuccess: () => {
@@ -154,12 +164,11 @@ function NewLoadModal({ onClose }: { onClose: () => void }) {
       <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={onClose} />
       <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-lg mx-4 p-6 max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-5">
-          <h2 className="text-base font-semibold text-gray-900">New Load</h2>
+          <h2 className="text-base font-semibold text-gray-900">{editing ? 'Edit Load' : 'New Load'}</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 cursor-pointer">✕</button>
         </div>
 
         <div className="space-y-3">
-          {/* Load # and Status */}
           <div className="grid grid-cols-2 gap-3">
             <Field label="Load #" value={form.load_number} onChange={v => set('load_number', v)} placeholder="LD-1042" />
             <div>
@@ -170,7 +179,6 @@ function NewLoadModal({ onClose }: { onClose: () => void }) {
             </div>
           </div>
 
-          {/* Origin */}
           <div>
             <p className="text-xs font-medium text-gray-600 mb-1">Origin</p>
             <div className="grid grid-cols-2 gap-2">
@@ -179,7 +187,6 @@ function NewLoadModal({ onClose }: { onClose: () => void }) {
             </div>
           </div>
 
-          {/* Destination */}
           <div>
             <p className="text-xs font-medium text-gray-600 mb-1">Destination</p>
             <div className="grid grid-cols-2 gap-2">
@@ -188,7 +195,6 @@ function NewLoadModal({ onClose }: { onClose: () => void }) {
             </div>
           </div>
 
-          {/* Dropdowns */}
           <div className="grid grid-cols-3 gap-3">
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Broker</label>
@@ -221,7 +227,6 @@ function NewLoadModal({ onClose }: { onClose: () => void }) {
             </div>
           </div>
 
-          {/* Type / Miles / Rate */}
           <div className="grid grid-cols-3 gap-3">
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Load Type</label>
@@ -242,7 +247,7 @@ function NewLoadModal({ onClose }: { onClose: () => void }) {
           <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 cursor-pointer">Cancel</button>
           <button onClick={() => mutation.mutate()} disabled={!canSubmit}
             className="px-4 py-2 text-sm text-white rounded-lg disabled:opacity-50 cursor-pointer" style={{ background: '#c8410a' }}>
-            {mutation.isPending ? 'Saving…' : 'Create Load'}
+            {mutation.isPending ? 'Saving…' : editing ? 'Save Changes' : 'Create Load'}
           </button>
         </div>
       </div>
@@ -252,7 +257,9 @@ function NewLoadModal({ onClose }: { onClose: () => void }) {
 
 // ── Detail Panel ──────────────────────────────────────────────────────────────
 
-function DetailPanel({ load, onClose }: { load: Load; onClose: () => void }) {
+function DetailPanel({ load, onClose, onEdit, onDelete, deleting }: {
+  load: Load; onClose: () => void; onEdit: () => void; onDelete: () => void; deleting: boolean
+}) {
   const origin = routeStr(load.origin_city, load.origin_state)
   const dest   = routeStr(load.dest_city,   load.dest_state)
 
@@ -308,6 +315,14 @@ function DetailPanel({ load, onClose }: { load: Load; onClose: () => void }) {
             </dl>
           </div>
         </div>
+
+        <div className="flex gap-2 px-5 py-3 border-t border-gray-100">
+          <button onClick={onEdit} className="flex-1 px-3 py-2 text-sm rounded-lg border border-gray-200 hover:bg-gray-50 cursor-pointer">Edit</button>
+          <button onClick={onDelete} disabled={deleting}
+            className="flex-1 px-3 py-2 text-sm rounded-lg text-red-600 border border-red-200 hover:bg-red-50 disabled:opacity-50 cursor-pointer">
+            {deleting ? 'Deleting…' : 'Delete'}
+          </button>
+        </div>
       </aside>
     </>
   )
@@ -316,9 +331,10 @@ function DetailPanel({ load, onClose }: { load: Load; onClose: () => void }) {
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export function Loads() {
+  const qc = useQueryClient()
   const [tab, setTab] = useState<LoadStatus | 'All'>('All')
   const [selected, setSelected] = useState<Load | null>(null)
-  const [showModal, setShowModal] = useState(false)
+  const [modalState, setModalState] = useState<{ open: boolean; editing: Load | null }>({ open: false, editing: null })
 
   const { data: loads = [], isLoading, isError } = useQuery({
     queryKey: ['loads'],
@@ -331,6 +347,26 @@ export function Loads() {
       return data as Load[]
     },
   })
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from('loads').delete().eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['loads'] })
+      qc.invalidateQueries({ queryKey: ['dashboard-stats'] })
+      setSelected(null)
+    },
+    onError: (e: Error) => alert(e.message),
+  })
+
+  const handleDelete = (load: Load) => {
+    const label = load.load_number || `#${load.id.slice(0, 8)}`
+    if (confirm(`Delete load ${label}? This cannot be undone.`)) {
+      deleteMutation.mutate(load.id)
+    }
+  }
 
   const filtered = tab === 'All' ? loads : loads.filter(l => l.status === tab)
   const counts = TABS.reduce((acc, t) => {
@@ -345,14 +381,13 @@ export function Loads() {
           <h1 className="text-xl font-semibold text-gray-900">Loads</h1>
           <p className="text-sm text-gray-400 mt-0.5">{loads.length} total loads</p>
         </div>
-        <button onClick={() => setShowModal(true)}
+        <button onClick={() => setModalState({ open: true, editing: null })}
           className="flex items-center gap-1.5 px-3.5 py-2 text-sm font-medium text-white rounded-lg cursor-pointer" style={{ background: '#c8410a' }}>
           <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
           New Load
         </button>
       </div>
 
-      {/* Filter tabs */}
       <div className="flex gap-1 mb-4 bg-white rounded-xl border border-gray-100 p-1 w-fit">
         {TABS.map(t => (
           <button key={t} onClick={() => setTab(t)}
@@ -367,7 +402,6 @@ export function Loads() {
         ))}
       </div>
 
-      {/* Table */}
       <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
         {isLoading ? (
           <div className="flex items-center justify-center py-16 text-sm text-gray-400">Loading loads…</div>
@@ -414,8 +448,21 @@ export function Loads() {
         )}
       </div>
 
-      {selected && <DetailPanel load={selected} onClose={() => setSelected(null)} />}
-      {showModal && <NewLoadModal onClose={() => setShowModal(false)} />}
+      {selected && (
+        <DetailPanel
+          load={selected}
+          onClose={() => setSelected(null)}
+          onEdit={() => setModalState({ open: true, editing: selected })}
+          onDelete={() => handleDelete(selected)}
+          deleting={deleteMutation.isPending}
+        />
+      )}
+      {modalState.open && (
+        <LoadModal
+          editing={modalState.editing}
+          onClose={() => setModalState({ open: false, editing: null })}
+        />
+      )}
     </AppShell>
   )
 }

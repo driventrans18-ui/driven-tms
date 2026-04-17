@@ -48,15 +48,23 @@ function Detail({ label, value }: { label: string; value: string | number | null
   )
 }
 
-function NewTruckModal({ onClose }: { onClose: () => void }) {
+function TruckModal({ onClose, editing }: { onClose: () => void; editing: Truck | null }) {
   const qc = useQueryClient()
-  const [form, setForm] = useState({ unit_number: '', make: '', model: '', year: '', vin: '', license_plate: '', status: 'Active' })
+  const [form, setForm] = useState({
+    unit_number:   editing?.unit_number   ?? '',
+    make:          editing?.make          ?? '',
+    model:         editing?.model         ?? '',
+    year:          editing?.year != null ? String(editing.year) : '',
+    vin:           editing?.vin           ?? '',
+    license_plate: editing?.license_plate ?? '',
+    status:        editing?.status        ?? 'Active',
+  })
   const [error, setError] = useState<string | null>(null)
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }))
 
   const mutation = useMutation({
     mutationFn: async () => {
-      const { error } = await supabase.from('trucks').insert({
+      const payload = {
         unit_number: form.unit_number,
         make: form.make || null,
         model: form.model || null,
@@ -64,7 +72,10 @@ function NewTruckModal({ onClose }: { onClose: () => void }) {
         vin: form.vin || null,
         license_plate: form.license_plate || null,
         status: form.status,
-      })
+      }
+      const { error } = editing
+        ? await supabase.from('trucks').update(payload).eq('id', editing.id)
+        : await supabase.from('trucks').insert(payload)
       if (error) throw error
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['trucks'] }); qc.invalidateQueries({ queryKey: ['dashboard-stats'] }); onClose() },
@@ -76,7 +87,7 @@ function NewTruckModal({ onClose }: { onClose: () => void }) {
       <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={onClose} />
       <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-md mx-4 p-6">
         <div className="flex items-center justify-between mb-5">
-          <h2 className="text-base font-semibold text-gray-900">New Truck</h2>
+          <h2 className="text-base font-semibold text-gray-900">{editing ? 'Edit Truck' : 'New Truck'}</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 cursor-pointer">✕</button>
         </div>
         <div className="space-y-3">
@@ -105,7 +116,7 @@ function NewTruckModal({ onClose }: { onClose: () => void }) {
           <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 cursor-pointer">Cancel</button>
           <button onClick={() => mutation.mutate()} disabled={mutation.isPending || !form.unit_number}
             className="px-4 py-2 text-sm text-white rounded-lg disabled:opacity-50 cursor-pointer" style={{ background: '#c8410a' }}>
-            {mutation.isPending ? 'Saving…' : 'Add Truck'}
+            {mutation.isPending ? 'Saving…' : editing ? 'Save Changes' : 'Add Truck'}
           </button>
         </div>
       </div>
@@ -113,7 +124,9 @@ function NewTruckModal({ onClose }: { onClose: () => void }) {
   )
 }
 
-function DetailPanel({ truck, onClose }: { truck: Truck; onClose: () => void }) {
+function DetailPanel({ truck, onClose, onEdit, onDelete, deleting }: {
+  truck: Truck; onClose: () => void; onEdit: () => void; onDelete: () => void; deleting: boolean
+}) {
   return (
     <>
       <div className="fixed inset-0 z-30 bg-black/10" onClick={onClose} />
@@ -135,14 +148,22 @@ function DetailPanel({ truck, onClose }: { truck: Truck; onClose: () => void }) 
             <Detail label="VIN" value={truck.vin} />
           </dl>
         </div>
+        <div className="flex gap-2 px-5 py-3 border-t border-gray-100">
+          <button onClick={onEdit} className="flex-1 px-3 py-2 text-sm rounded-lg border border-gray-200 hover:bg-gray-50 cursor-pointer">Edit</button>
+          <button onClick={onDelete} disabled={deleting}
+            className="flex-1 px-3 py-2 text-sm rounded-lg text-red-600 border border-red-200 hover:bg-red-50 disabled:opacity-50 cursor-pointer">
+            {deleting ? 'Deleting…' : 'Delete'}
+          </button>
+        </div>
       </aside>
     </>
   )
 }
 
 export function Trucks() {
+  const qc = useQueryClient()
   const [selected, setSelected] = useState<Truck | null>(null)
-  const [showModal, setShowModal] = useState(false)
+  const [modalState, setModalState] = useState<{ open: boolean; editing: Truck | null }>({ open: false, editing: null })
   const [statusFilter, setStatusFilter] = useState('All')
 
   const { data: trucks = [], isLoading } = useQuery({
@@ -154,6 +175,25 @@ export function Trucks() {
     },
   })
 
+  const deleteMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const { error } = await supabase.from('trucks').delete().eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['trucks'] })
+      qc.invalidateQueries({ queryKey: ['dashboard-stats'] })
+      setSelected(null)
+    },
+    onError: (e: Error) => alert(e.message),
+  })
+
+  const handleDelete = (truck: Truck) => {
+    if (confirm(`Delete truck ${truck.unit_number}? This cannot be undone.`)) {
+      deleteMutation.mutate(truck.id)
+    }
+  }
+
   const statuses = ['All', 'Active', 'In Shop', 'Inactive']
   const filtered = statusFilter === 'All' ? trucks : trucks.filter(t => t.status === statusFilter)
 
@@ -164,7 +204,7 @@ export function Trucks() {
           <h1 className="text-xl font-semibold text-gray-900">Trucks</h1>
           <p className="text-sm text-gray-400 mt-0.5">{trucks.length} in fleet</p>
         </div>
-        <button onClick={() => setShowModal(true)}
+        <button onClick={() => setModalState({ open: true, editing: null })}
           className="flex items-center gap-1.5 px-3.5 py-2 text-sm font-medium text-white rounded-lg cursor-pointer" style={{ background: '#c8410a' }}>
           <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
           Add Truck
@@ -214,8 +254,21 @@ export function Trucks() {
         )}
       </div>
 
-      {selected && <DetailPanel truck={selected} onClose={() => setSelected(null)} />}
-      {showModal && <NewTruckModal onClose={() => setShowModal(false)} />}
+      {selected && (
+        <DetailPanel
+          truck={selected}
+          onClose={() => setSelected(null)}
+          onEdit={() => setModalState({ open: true, editing: selected })}
+          onDelete={() => handleDelete(selected)}
+          deleting={deleteMutation.isPending}
+        />
+      )}
+      {modalState.open && (
+        <TruckModal
+          editing={modalState.editing}
+          onClose={() => setModalState({ open: false, editing: null })}
+        />
+      )}
     </AppShell>
   )
 }
