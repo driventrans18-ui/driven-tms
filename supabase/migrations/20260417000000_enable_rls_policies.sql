@@ -102,3 +102,36 @@ begin
     execute format('alter table %s drop constraint %I', r.table_name, r.conname);
   end loop;
 end $$;
+
+-- ── 5. Rewrite FKs on app tables to ON DELETE SET NULL ──────────────────────
+-- Without this, deleting a row Postgres considers "referenced" (e.g. a truck
+-- that a driver has as default_truck_id) fails with
+-- "update or delete on table X violates foreign key constraint".
+do $$
+declare
+  r record;
+begin
+  for r in
+    select
+      con.conname,
+      con.conrelid::regclass::text as table_name,
+      con.confrelid::regclass::text as ref_table,
+      string_agg(quote_ident(att.attname),  ', ' order by u.ord) as cols,
+      string_agg(quote_ident(fatt.attname), ', ' order by u.ord) as ref_cols
+    from pg_constraint con
+    cross join lateral unnest(con.conkey, con.confkey) with ordinality as u(key, fkey, ord)
+    join pg_attribute att  on att.attrelid  = con.conrelid  and att.attnum  = u.key
+    join pg_attribute fatt on fatt.attrelid = con.confrelid and fatt.attnum = u.fkey
+    where con.contype = 'f'
+      and con.confrelid::regclass::text in (
+        'drivers','trucks','brokers','loads','expenses','invoices','maintenance'
+      )
+    group by con.conname, con.conrelid, con.confrelid
+  loop
+    execute format('alter table %s drop constraint %I', r.table_name, r.conname);
+    execute format(
+      'alter table %s add constraint %I foreign key (%s) references %s(%s) on delete set null',
+      r.table_name, r.conname, r.cols, r.ref_table, r.ref_cols
+    );
+  end loop;
+end $$;
