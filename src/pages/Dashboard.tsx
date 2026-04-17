@@ -2,6 +2,7 @@ import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { AppShell } from '../components/AppShell'
+import { listItems, severity, KIND_LABEL, daysLeft } from '../lib/compliance'
 
 // ── Stat queries ──────────────────────────────────────────────────────────────
 
@@ -66,6 +67,40 @@ function useWeekSummary() {
 
 function fmtMoney(n: number) {
   return '$' + n.toLocaleString('en-US', { maximumFractionDigits: 0 })
+}
+
+function ExpiringSoonBanner() {
+  const navigate = useNavigate()
+  const { data: items = [] } = useQuery({
+    queryKey: ['compliance-items', 'all'],
+    queryFn: () => listItems(),
+  })
+  const attention = items.filter(i => ['expired', 'critical'].includes(severity(i.expires_at)))
+  if (attention.length === 0) return null
+  const expiredCount = attention.filter(i => severity(i.expires_at) === 'expired').length
+  const preview = attention.slice(0, 3)
+  return (
+    <button onClick={() => navigate('/compliance')}
+      className={`w-full text-left mb-4 p-4 rounded-xl border cursor-pointer transition-colors ${
+        expiredCount > 0
+          ? 'bg-red-50 border-red-200 hover:bg-red-100'
+          : 'bg-orange-50 border-orange-200 hover:bg-orange-100'
+      }`}>
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-sm font-semibold text-gray-900">
+            {attention.length} compliance item{attention.length === 1 ? '' : 's'} need attention
+            {expiredCount > 0 && <span className="text-red-700"> · {expiredCount} expired</span>}
+          </p>
+          <p className="text-xs text-gray-600 mt-0.5">
+            {preview.map(i => `${KIND_LABEL[i.kind]} (${daysLeft(i.expires_at)}d)`).join(' · ')}
+            {attention.length > 3 && ` · +${attention.length - 3} more`}
+          </p>
+        </div>
+        <span className="text-xs font-medium text-gray-500">View →</span>
+      </div>
+    </button>
+  )
 }
 
 function WeeklySummary() {
@@ -173,6 +208,8 @@ export function Dashboard() {
         <h1 className="text-xl font-semibold text-gray-900">Dashboard</h1>
         <p className="text-sm text-gray-400 mt-0.5">Driven Transportation Inc. — Webster, NY</p>
       </div>
+
+      <ExpiringSoonBanner />
 
       <WeeklySummary />
 

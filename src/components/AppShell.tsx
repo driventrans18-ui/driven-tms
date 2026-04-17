@@ -13,6 +13,7 @@ const navItems = [
   { label: 'Brokers', path: '/brokers' },
   { label: 'Customers', path: '/customers' },
   { label: 'Maintenance', path: '/maintenance' },
+  { label: 'Compliance', path: '/compliance' },
 ]
 
 interface AppShellProps {

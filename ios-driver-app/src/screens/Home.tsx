@@ -5,6 +5,7 @@ import { cacheGet, cacheSet } from '../lib/cache'
 import { fmtHms } from '../lib/hos'
 import { useHos } from '../hooks/useHOS'
 import { LoadCard, type LoadCardLoad } from '../components/LoadCard'
+import { ExpirationsCard } from '../components/ExpirationsCard'
 import type { Driver } from '../hooks/useDriver'
 
 const ACTIVE_STATUSES = ['Assigned', 'In Transit']
@@ -164,6 +165,8 @@ export function Home({ driver, onGoToLoads }: { driver: Driver; onGoToLoads: () 
       )}
 
       <WeekSummary driverId={driver.id} />
+
+      <ExpirationsCard driverId={driver.id} />
 
       <div className="bg-white rounded-2xl p-5">
         <div className="flex items-center justify-between mb-3">
