@@ -29,6 +29,10 @@ It adds `drivers.user_id`, the `hos_events` table, and the `load_checkins` table
 
 In the web TMS, make sure a Driver row exists for you with `email` set to the same address you'll sign into the app with. The first sign-in auto-links that driver row via email.
 
+### Which anon key to use
+
+In Supabase → Project Settings → API, there are two tabs: "Publishable and secret" and "Legacy anon, service_role". **Use the publishable key** (`sb_publishable_…`). The legacy JWT key may be disabled on newer projects and will return "Invalid API key" even though it looks valid.
+
 ## Run on the iOS simulator
 
 ```bash
