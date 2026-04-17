@@ -1,6 +1,9 @@
 import { useState, type FormEvent } from 'react'
 import { supabase } from '../lib/supabase'
 
+const DEBUG_URL = import.meta.env.VITE_SUPABASE_URL as string
+const DEBUG_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string
+
 export function Login() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -37,6 +40,12 @@ export function Login() {
             {busy ? 'Signing in…' : 'Sign in'}
           </button>
         </form>
+      </div>
+      <div className="pb-6 pt-4 text-[11px] text-gray-400 font-mono leading-relaxed break-all">
+        <div>url: {DEBUG_URL || '(empty)'}</div>
+        <div>key len: {DEBUG_KEY?.length ?? 0}</div>
+        <div>key start: {DEBUG_KEY?.slice(0, 8) || '(empty)'}</div>
+        <div>key end: …{DEBUG_KEY?.slice(-8) || '(empty)'}</div>
       </div>
     </div>
   )
