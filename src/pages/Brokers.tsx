@@ -35,22 +35,32 @@ function Detail({ label, value }: { label: string; value: string | number | null
   )
 }
 
-function NewBrokerModal({ onClose }: { onClose: () => void }) {
+function BrokerModal({ onClose, editing }: { onClose: () => void; editing: Broker | null }) {
   const qc = useQueryClient()
-  const [form, setForm] = useState({ name: '', contact_name: '', phone: '', email: '', mc_number: '', notes: '' })
+  const [form, setForm] = useState({
+    name:         editing?.name         ?? '',
+    contact_name: editing?.contact_name ?? '',
+    phone:        editing?.phone        ?? '',
+    email:        editing?.email        ?? '',
+    mc_number:    editing?.mc_number    ?? '',
+    notes:        editing?.notes        ?? '',
+  })
   const [error, setError] = useState<string | null>(null)
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }))
 
   const mutation = useMutation({
     mutationFn: async () => {
-      const { error } = await supabase.from('brokers').insert({
+      const payload = {
         name: form.name,
         contact_name: form.contact_name || null,
         phone: form.phone || null,
         email: form.email || null,
         mc_number: form.mc_number || null,
         notes: form.notes || null,
-      })
+      }
+      const { error } = editing
+        ? await supabase.from('brokers').update(payload).eq('id', editing.id)
+        : await supabase.from('brokers').insert(payload)
       if (error) throw error
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['brokers'] }); onClose() },
@@ -62,7 +72,7 @@ function NewBrokerModal({ onClose }: { onClose: () => void }) {
       <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={onClose} />
       <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-md mx-4 p-6">
         <div className="flex items-center justify-between mb-5">
-          <h2 className="text-base font-semibold text-gray-900">New Broker</h2>
+          <h2 className="text-base font-semibold text-gray-900">{editing ? 'Edit Broker' : 'New Broker'}</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 cursor-pointer">✕</button>
         </div>
         <div className="space-y-3">
@@ -84,7 +94,7 @@ function NewBrokerModal({ onClose }: { onClose: () => void }) {
           <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 cursor-pointer">Cancel</button>
           <button onClick={() => mutation.mutate()} disabled={mutation.isPending || !form.name}
             className="px-4 py-2 text-sm text-white rounded-lg disabled:opacity-50 cursor-pointer" style={{ background: '#c8410a' }}>
-            {mutation.isPending ? 'Saving…' : 'Add Broker'}
+            {mutation.isPending ? 'Saving…' : editing ? 'Save Changes' : 'Add Broker'}
           </button>
         </div>
       </div>
@@ -92,7 +102,9 @@ function NewBrokerModal({ onClose }: { onClose: () => void }) {
   )
 }
 
-function DetailPanel({ broker, onClose }: { broker: Broker; onClose: () => void }) {
+function DetailPanel({ broker, onClose, onEdit, onDelete, deleting }: {
+  broker: Broker; onClose: () => void; onEdit: () => void; onDelete: () => void; deleting: boolean
+}) {
   return (
     <>
       <div className="fixed inset-0 z-30 bg-black/10" onClick={onClose} />
@@ -118,14 +130,22 @@ function DetailPanel({ broker, onClose }: { broker: Broker; onClose: () => void 
             </div>
           )}
         </div>
+        <div className="flex gap-2 px-5 py-3 border-t border-gray-100">
+          <button onClick={onEdit} className="flex-1 px-3 py-2 text-sm rounded-lg border border-gray-200 hover:bg-gray-50 cursor-pointer">Edit</button>
+          <button onClick={onDelete} disabled={deleting}
+            className="flex-1 px-3 py-2 text-sm rounded-lg text-red-600 border border-red-200 hover:bg-red-50 disabled:opacity-50 cursor-pointer">
+            {deleting ? 'Deleting…' : 'Delete'}
+          </button>
+        </div>
       </aside>
     </>
   )
 }
 
 export function Brokers() {
+  const qc = useQueryClient()
   const [selected, setSelected] = useState<Broker | null>(null)
-  const [showModal, setShowModal] = useState(false)
+  const [modalState, setModalState] = useState<{ open: boolean; editing: Broker | null }>({ open: false, editing: null })
   const [search, setSearch] = useState('')
 
   const { data: brokers = [], isLoading } = useQuery({
@@ -136,6 +156,24 @@ export function Brokers() {
       return data as Broker[]
     },
   })
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from('brokers').delete().eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['brokers'] })
+      setSelected(null)
+    },
+    onError: (e: Error) => alert(e.message),
+  })
+
+  const handleDelete = (broker: Broker) => {
+    if (confirm(`Delete ${broker.name}? This cannot be undone.`)) {
+      deleteMutation.mutate(broker.id)
+    }
+  }
 
   const filtered = search
     ? brokers.filter(b => b.name.toLowerCase().includes(search.toLowerCase()) || b.contact_name?.toLowerCase().includes(search.toLowerCase()))
@@ -148,7 +186,7 @@ export function Brokers() {
           <h1 className="text-xl font-semibold text-gray-900">Brokers</h1>
           <p className="text-sm text-gray-400 mt-0.5">{brokers.length} brokers</p>
         </div>
-        <button onClick={() => setShowModal(true)}
+        <button onClick={() => setModalState({ open: true, editing: null })}
           className="flex items-center gap-1.5 px-3.5 py-2 text-sm font-medium text-white rounded-lg cursor-pointer" style={{ background: '#c8410a' }}>
           <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
           Add Broker
@@ -192,8 +230,21 @@ export function Brokers() {
         )}
       </div>
 
-      {selected && <DetailPanel broker={selected} onClose={() => setSelected(null)} />}
-      {showModal && <NewBrokerModal onClose={() => setShowModal(false)} />}
+      {selected && (
+        <DetailPanel
+          broker={selected}
+          onClose={() => setSelected(null)}
+          onEdit={() => setModalState({ open: true, editing: selected })}
+          onDelete={() => handleDelete(selected)}
+          deleting={deleteMutation.isPending}
+        />
+      )}
+      {modalState.open && (
+        <BrokerModal
+          editing={modalState.editing}
+          onClose={() => setModalState({ open: false, editing: null })}
+        />
+      )}
     </AppShell>
   )
 }

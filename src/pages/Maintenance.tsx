@@ -25,9 +25,15 @@ function Detail({ label, value }: { label: string; value: string | number | null
   )
 }
 
-function NewMxModal({ onClose }: { onClose: () => void }) {
+function MxModal({ onClose, editing }: { onClose: () => void; editing: MaintenanceRecord | null }) {
   const qc = useQueryClient()
-  const [form, setForm] = useState({ truck_id: '', service_type: 'Oil Change', description: '', cost: '', vendor: '' })
+  const [form, setForm] = useState({
+    truck_id:     editing?.truck_id     ?? '',
+    service_type: editing?.service_type ?? 'Oil Change',
+    description:  editing?.description  ?? '',
+    cost:         editing?.cost != null ? String(editing.cost) : '',
+    vendor:       editing?.vendor       ?? '',
+  })
   const [error, setError] = useState<string | null>(null)
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }))
 
@@ -38,13 +44,16 @@ function NewMxModal({ onClose }: { onClose: () => void }) {
 
   const mutation = useMutation({
     mutationFn: async () => {
-      const { error } = await supabase.from('maintenance').insert({
+      const payload = {
         truck_id: form.truck_id || null,
         service_type: form.service_type,
         description: form.description || null,
         cost: form.cost ? Number(form.cost) : null,
         vendor: form.vendor || null,
-      })
+      }
+      const { error } = editing
+        ? await supabase.from('maintenance').update(payload).eq('id', editing.id)
+        : await supabase.from('maintenance').insert(payload)
       if (error) throw error
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['maintenance'] }); onClose() },
@@ -56,7 +65,7 @@ function NewMxModal({ onClose }: { onClose: () => void }) {
       <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={onClose} />
       <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-md mx-4 p-6">
         <div className="flex items-center justify-between mb-5">
-          <h2 className="text-base font-semibold text-gray-900">New Maintenance Record</h2>
+          <h2 className="text-base font-semibold text-gray-900">{editing ? 'Edit Maintenance Record' : 'New Maintenance Record'}</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 cursor-pointer">✕</button>
         </div>
         <div className="space-y-3">
@@ -98,7 +107,7 @@ function NewMxModal({ onClose }: { onClose: () => void }) {
           <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 cursor-pointer">Cancel</button>
           <button onClick={() => mutation.mutate()} disabled={mutation.isPending}
             className="px-4 py-2 text-sm text-white rounded-lg disabled:opacity-50 cursor-pointer" style={{ background: '#c8410a' }}>
-            {mutation.isPending ? 'Saving…' : 'Save Record'}
+            {mutation.isPending ? 'Saving…' : editing ? 'Save Changes' : 'Save Record'}
           </button>
         </div>
       </div>
@@ -106,7 +115,9 @@ function NewMxModal({ onClose }: { onClose: () => void }) {
   )
 }
 
-function DetailPanel({ record, onClose }: { record: MaintenanceRecord; onClose: () => void }) {
+function DetailPanel({ record, onClose, onEdit, onDelete, deleting }: {
+  record: MaintenanceRecord; onClose: () => void; onEdit: () => void; onDelete: () => void; deleting: boolean
+}) {
   return (
     <>
       <div className="fixed inset-0 z-30 bg-black/10" onClick={onClose} />
@@ -130,14 +141,22 @@ function DetailPanel({ record, onClose }: { record: MaintenanceRecord; onClose: 
             </div>
           )}
         </div>
+        <div className="flex gap-2 px-5 py-3 border-t border-gray-100">
+          <button onClick={onEdit} className="flex-1 px-3 py-2 text-sm rounded-lg border border-gray-200 hover:bg-gray-50 cursor-pointer">Edit</button>
+          <button onClick={onDelete} disabled={deleting}
+            className="flex-1 px-3 py-2 text-sm rounded-lg text-red-600 border border-red-200 hover:bg-red-50 disabled:opacity-50 cursor-pointer">
+            {deleting ? 'Deleting…' : 'Delete'}
+          </button>
+        </div>
       </aside>
     </>
   )
 }
 
 export function Maintenance() {
+  const qc = useQueryClient()
   const [selected, setSelected] = useState<MaintenanceRecord | null>(null)
-  const [showModal, setShowModal] = useState(false)
+  const [modalState, setModalState] = useState<{ open: boolean; editing: MaintenanceRecord | null }>({ open: false, editing: null })
   const [typeFilter, setTypeFilter] = useState('All')
 
   const { data: records = [], isLoading } = useQuery({
@@ -148,6 +167,25 @@ export function Maintenance() {
       return data as MaintenanceRecord[]
     },
   })
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from('maintenance').delete().eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['maintenance'] })
+      setSelected(null)
+    },
+    onError: (e: Error) => alert(e.message),
+  })
+
+  const handleDelete = (record: MaintenanceRecord) => {
+    const label = record.service_type || 'this record'
+    if (confirm(`Delete ${label}? This cannot be undone.`)) {
+      deleteMutation.mutate(record.id)
+    }
+  }
 
   const types = ['All', ...SERVICE_TYPES]
   const filtered = typeFilter === 'All' ? records : records.filter(r => r.service_type === typeFilter)
@@ -160,7 +198,7 @@ export function Maintenance() {
           <h1 className="text-xl font-semibold text-gray-900">Maintenance</h1>
           <p className="text-sm text-gray-400 mt-0.5">{filtered.length} records · {fmt(totalCost)} total cost</p>
         </div>
-        <button onClick={() => setShowModal(true)}
+        <button onClick={() => setModalState({ open: true, editing: null })}
           className="flex items-center gap-1.5 px-3.5 py-2 text-sm font-medium text-white rounded-lg cursor-pointer" style={{ background: '#c8410a' }}>
           <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
           New Record
@@ -207,8 +245,21 @@ export function Maintenance() {
         )}
       </div>
 
-      {selected && <DetailPanel record={selected} onClose={() => setSelected(null)} />}
-      {showModal && <NewMxModal onClose={() => setShowModal(false)} />}
+      {selected && (
+        <DetailPanel
+          record={selected}
+          onClose={() => setSelected(null)}
+          onEdit={() => setModalState({ open: true, editing: selected })}
+          onDelete={() => handleDelete(selected)}
+          deleting={deleteMutation.isPending}
+        />
+      )}
+      {modalState.open && (
+        <MxModal
+          editing={modalState.editing}
+          onClose={() => setModalState({ open: false, editing: null })}
+        />
+      )}
     </AppShell>
   )
 }
