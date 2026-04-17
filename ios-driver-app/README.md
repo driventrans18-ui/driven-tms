@@ -51,6 +51,19 @@ In Xcode: pick an iPhone simulator → ⌘R.
 3. In the Organizer, Distribute App → App Store Connect → Upload.
 4. On App Store Connect, add yourself as an internal tester and the build will appear in TestFlight on your phone.
 
+## Adding the Document Scanner plugin in Xcode (one-time)
+
+The native iOS VNDocumentCameraViewController wrapper lives in
+`ios-plugins/DocScan/`. After running `npx cap add ios` the first time,
+drag these two files into the `App` group in Xcode's Project Navigator:
+
+- `ios-plugins/DocScan/DocScanPlugin.swift`
+- `ios-plugins/DocScan/DocScanPlugin.m`
+
+When Xcode prompts, check **"Copy items if needed"** and add them to the
+`App` target. Then archive normally — the "Scan Rate Con (multi-page)"
+button in the app will call into the native scanner.
+
 ## Native capabilities (iOS Info.plist keys)
 
 Xcode will prompt to add these; paste the purpose strings so iOS approves the prompts:
