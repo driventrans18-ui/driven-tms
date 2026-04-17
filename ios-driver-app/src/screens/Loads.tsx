@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { LoadCard, type LoadCardLoad } from '../components/LoadCard'
+import { DocViewer } from '../components/DocViewer'
+import { isDocScanAvailable, scanDocument } from '../lib/docScan'
 import type { Driver } from '../hooks/useDriver'
 
 type DocKind = 'rate_con' | 'pod' | 'other'
@@ -12,6 +14,7 @@ interface LoadDocument {
   kind: DocKind
   storage_path: string
   file_name: string
+  mime_type: string | null
   created_at: string
 }
 
@@ -449,10 +452,17 @@ function QuickBrokerSheet({ onClose, onCreated }: { onClose: () => void; onCreat
 
 // ── Documents ────────────────────────────────────────────────────────────────
 
+interface OpenDoc {
+  url: string
+  mimeType: string | null
+  fileName: string
+}
+
 function LoadDocs({ load }: { load: LoadDetail }) {
   const qc = useQueryClient()
   const [error, setError] = useState<string | null>(null)
-  const [busy, setBusy] = useState<DocKind | 'email' | null>(null)
+  const [busy, setBusy] = useState<DocKind | 'email' | 'scan' | null>(null)
+  const [viewing, setViewing] = useState<OpenDoc | null>(null)
 
   const { data: docs = [] } = useQuery({
     queryKey: ['load-documents', load.id],
@@ -513,7 +523,43 @@ function LoadDocs({ load }: { load: LoadDetail }) {
   const openDoc = async (doc: LoadDocument) => {
     const { data, error } = await supabase.storage.from(DOC_BUCKET).createSignedUrl(doc.storage_path, 3600)
     if (error) { setError(error.message); return }
-    window.open(data.signedUrl, '_blank')
+    setViewing({ url: data.signedUrl, mimeType: doc.mime_type ?? null, fileName: doc.file_name })
+  }
+
+  // Upload scanned pages (from native iOS document scanner) as a Rate Con.
+  // Each page becomes its own load_documents row so the user can email them
+  // or review individually.
+  const scanRateCon = async () => {
+    setBusy('scan'); setError(null)
+    try {
+      const images = await scanDocument()
+      if (images.length === 0) { setBusy(null); return }
+      for (const base64 of images) {
+        const fileName = `rate_con-${Date.now()}-${Math.random().toString(36).slice(2, 6)}.jpg`
+        const path = `${load.id}/${crypto.randomUUID()}-${fileName}`
+        const bytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0))
+        const blob = new Blob([bytes], { type: 'image/jpeg' })
+        const { error: upErr } = await supabase.storage.from(DOC_BUCKET).upload(path, blob, {
+          contentType: 'image/jpeg',
+        })
+        if (upErr) throw upErr
+        const { error: dbErr } = await supabase.from('load_documents').insert({
+          load_id: load.id,
+          kind: 'rate_con',
+          storage_path: path,
+          file_name: fileName,
+          mime_type: 'image/jpeg',
+          file_size: blob.size,
+        })
+        if (dbErr) throw dbErr
+      }
+      qc.invalidateQueries({ queryKey: ['load-documents', load.id] })
+    } catch (e) {
+      const msg = (e as Error).message
+      if (msg !== 'User cancelled') setError(msg)
+    } finally {
+      setBusy(null)
+    }
   }
 
   const deleteDoc = async (doc: LoadDocument) => {
@@ -570,6 +616,13 @@ function LoadDocs({ load }: { load: LoadDetail }) {
   return (
     <div className="mt-5">
       <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Documents</p>
+      {isDocScanAvailable() && (
+        <button onClick={scanRateCon} disabled={busy !== null}
+          className="w-full mb-2 py-2.5 rounded-lg text-sm font-semibold text-white disabled:opacity-50 cursor-pointer"
+          style={{ background: '#c8410a' }}>
+          {busy === 'scan' ? 'Uploading scan…' : 'Scan Rate Con (multi-page)'}
+        </button>
+      )}
       <div className="grid grid-cols-3 gap-2 mb-3">
         <DocButton label="+ Rate Con" busy={busy === 'rate_con'} disabled={busy !== null} onClick={() => uploadPhoto('rate_con')} />
         <DocButton label="+ POD"      busy={busy === 'pod'}      disabled={busy !== null} onClick={() => uploadPhoto('pod')} />
@@ -604,6 +657,7 @@ function LoadDocs({ load }: { load: LoadDetail }) {
       </button>
 
       {error && <p className="mt-3 text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
+      {viewing && <DocViewer url={viewing.url} mimeType={viewing.mimeType} fileName={viewing.fileName} onClose={() => setViewing(null)} />}
     </div>
   )
 }

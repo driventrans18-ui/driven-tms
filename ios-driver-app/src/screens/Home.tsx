@@ -2,9 +2,8 @@ import { useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { cacheGet, cacheSet } from '../lib/cache'
-import { fmtHms } from '../lib/hos'
-import { useHos } from '../hooks/useHOS'
 import { LoadCard, type LoadCardLoad } from '../components/LoadCard'
+import { LoadCalendar } from '../components/LoadCalendar'
 import type { Driver } from '../hooks/useDriver'
 
 const ACTIVE_STATUSES = ['Assigned', 'In Transit']
@@ -64,7 +63,6 @@ function WeekSummary({ driverId }: { driverId: string }) {
 
 export function Home({ driver, onGoToLoads }: { driver: Driver; onGoToLoads: () => void }) {
   const qc = useQueryClient()
-  const { summary, setStatus } = useHos(driver.id)
 
   const { data: activeLoad } = useQuery({
     queryKey: ['active-load', driver.id],
@@ -144,12 +142,6 @@ export function Home({ driver, onGoToLoads }: { driver: Driver; onGoToLoads: () 
     onSuccess: () => alert('POD uploaded.'),
   })
 
-  const warnBg = summary.warning === 'expired' ? 'bg-red-100 text-red-700'
-    : summary.warning === '30m' ? 'bg-red-100 text-red-700'
-    : summary.warning === '1h' ? 'bg-orange-100 text-orange-700'
-    : summary.warning === '2h' ? 'bg-yellow-100 text-yellow-800'
-    : 'bg-green-100 text-green-700'
-
   return (
     <div className="space-y-5">
       {activeLoad ? (
@@ -165,33 +157,7 @@ export function Home({ driver, onGoToLoads }: { driver: Driver; onGoToLoads: () 
 
       <WeekSummary driverId={driver.id} />
 
-      <div className="bg-white rounded-2xl p-5">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Drive time remaining</h2>
-          <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${warnBg}`}>
-            {summary.warning === 'ok' ? 'OK' : summary.warning.toUpperCase()}
-          </span>
-        </div>
-        <p className="text-5xl font-bold text-gray-900 tabular-nums">{fmtHms(summary.remainingMs)}</p>
-        <p className="mt-1 text-sm text-gray-500">of 11:00:00 daily drive limit</p>
-        <div className="grid grid-cols-2 gap-2 mt-4">
-          <button
-            onClick={() => setStatus.mutate('driving')}
-            disabled={setStatus.isPending || summary.driving}
-            className="py-3 rounded-xl text-base font-semibold text-white disabled:opacity-40 cursor-pointer"
-            style={{ background: '#c8410a' }}
-          >
-            On Duty
-          </button>
-          <button
-            onClick={() => setStatus.mutate('off_duty')}
-            disabled={setStatus.isPending || !summary.driving}
-            className="py-3 rounded-xl text-base font-semibold bg-gray-200 text-gray-800 disabled:opacity-40 cursor-pointer"
-          >
-            Off Duty
-          </button>
-        </div>
-      </div>
+      <LoadCalendar driverId={driver.id} />
 
       <div className="grid grid-cols-3 gap-2">
         <button onClick={() => capturePod.mutate()} disabled={!activeLoad || capturePod.isPending}
