@@ -10,6 +10,7 @@ import { Drivers } from './pages/Drivers'
 import { Brokers } from './pages/Brokers'
 import { Customers } from './pages/Customers'
 import { Maintenance } from './pages/Maintenance'
+import { Compliance } from './pages/Compliance'
 import { Settings } from './pages/Settings'
 import { ProtectedRoute } from './components/ProtectedRoute'
 
@@ -30,6 +31,7 @@ function App() {
           <Route path="/brokers" element={<ProtectedRoute><Brokers /></ProtectedRoute>} />
           <Route path="/customers" element={<ProtectedRoute><Customers /></ProtectedRoute>} />
           <Route path="/maintenance" element={<ProtectedRoute><Maintenance /></ProtectedRoute>} />
+          <Route path="/compliance" element={<ProtectedRoute><Compliance /></ProtectedRoute>} />
           <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>

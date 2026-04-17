@@ -9,6 +9,7 @@ import { Expenses } from './screens/Expenses'
 import { Invoices } from './screens/Invoices'
 import { Profile } from './screens/Profile'
 import { TabBar, type TabKey, TABS } from './components/TabBar'
+import { registerPushForUser } from './lib/push'
 
 export function App() {
   const { session, loading } = useAuth()
@@ -26,6 +27,8 @@ export function App() {
           await LocalNotifications.requestPermissions()
         }
       } catch { /* web or plugin unavailable */ }
+      // Register for APNs so compliance reminders can reach this device.
+      if (!cancelled) registerPushForUser(session.user.id)
     })()
     return () => { cancelled = true }
   }, [session])

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { AppShell } from '../components/AppShell'
+import { ComplianceTab } from '../components/ComplianceTab'
 
 interface Driver {
   id: string
@@ -152,6 +153,7 @@ function DetailPanel({ driver, onClose, onEdit, onDelete, deleting }: {
             <Detail label="Email" value={driver.email} />
             <Detail label="CDL Class" value={driver.cdl_class} />
           </dl>
+          <ComplianceTab entityType="driver" entityId={driver.id} />
         </div>
         <div className="flex gap-2 px-5 py-3 border-t border-gray-100">
           <button onClick={onEdit} className="flex-1 px-3 py-2 text-sm rounded-lg border border-gray-200 hover:bg-gray-50 cursor-pointer">Edit</button>
