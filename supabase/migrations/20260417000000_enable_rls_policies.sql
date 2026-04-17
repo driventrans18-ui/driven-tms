@@ -14,6 +14,65 @@
 -- (or similar tenant columns) on the app's tables, and drops the
 -- legacy CHECK constraints that conflict with the app's status strings.
 
+-- ── 0. Ensure every column the app expects exists ──────────────────────────
+-- PostgREST returns "Could not find the 'X' column of 'Y' in the schema cache"
+-- when the app sends a field that isn't in the table. `add column if not exists`
+-- is a no-op when the column is already there, so this is safe to re-run.
+alter table public.trucks add column if not exists unit_number   text;
+alter table public.trucks add column if not exists make          text;
+alter table public.trucks add column if not exists model         text;
+alter table public.trucks add column if not exists year          integer;
+alter table public.trucks add column if not exists vin           text;
+alter table public.trucks add column if not exists license_plate text;
+alter table public.trucks add column if not exists status        text;
+
+alter table public.drivers add column if not exists first_name text;
+alter table public.drivers add column if not exists last_name  text;
+alter table public.drivers add column if not exists phone      text;
+alter table public.drivers add column if not exists email      text;
+alter table public.drivers add column if not exists cdl_class  text;
+alter table public.drivers add column if not exists status     text;
+
+alter table public.brokers add column if not exists name         text;
+alter table public.brokers add column if not exists contact_name text;
+alter table public.brokers add column if not exists phone        text;
+alter table public.brokers add column if not exists email        text;
+alter table public.brokers add column if not exists mc_number    text;
+alter table public.brokers add column if not exists notes        text;
+
+alter table public.loads add column if not exists load_number  text;
+alter table public.loads add column if not exists origin_city  text;
+alter table public.loads add column if not exists origin_state text;
+alter table public.loads add column if not exists dest_city    text;
+alter table public.loads add column if not exists dest_state   text;
+alter table public.loads add column if not exists load_type    text;
+alter table public.loads add column if not exists miles        numeric;
+alter table public.loads add column if not exists rate         numeric;
+alter table public.loads add column if not exists status       text;
+alter table public.loads add column if not exists eta          date;
+
+alter table public.expenses add column if not exists expense_date  date;
+alter table public.expenses add column if not exists category      text;
+alter table public.expenses add column if not exists amount        numeric;
+alter table public.expenses add column if not exists vendor        text;
+alter table public.expenses add column if not exists notes         text;
+alter table public.expenses add column if not exists gallons       numeric;
+alter table public.expenses add column if not exists price_per_gal numeric;
+alter table public.expenses add column if not exists odometer      numeric;
+
+alter table public.invoices add column if not exists invoice_number text;
+alter table public.invoices add column if not exists amount         numeric;
+alter table public.invoices add column if not exists issued_date    date;
+alter table public.invoices add column if not exists due_date       date;
+alter table public.invoices add column if not exists paid_date      date;
+alter table public.invoices add column if not exists status         text;
+alter table public.invoices add column if not exists notes          text;
+
+alter table public.maintenance add column if not exists service_type text;
+alter table public.maintenance add column if not exists description  text;
+alter table public.maintenance add column if not exists vendor       text;
+alter table public.maintenance add column if not exists cost         numeric;
+
 -- ── 1. Grants ───────────────────────────────────────────────────────────────
 grant usage on schema public to anon, authenticated;
 
@@ -135,3 +194,6 @@ begin
     );
   end loop;
 end $$;
+
+-- ── 6. Force PostgREST to reload its schema cache ───────────────────────────
+notify pgrst, 'reload schema';
