@@ -19,6 +19,8 @@ interface Load {
   rate: number | null
   status: LoadStatus
   eta: string | null
+  pickup_at: string | null
+  deliver_by: string | null
   broker_id: string | null
   driver_id: string | null
   truck_id: string | null
@@ -47,6 +49,11 @@ function fmt(n: number | null, prefix = '') {
 function fmtDate(d: string | null) {
   if (!d) return '—'
   return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
+
+function fmtAppt(d: string | null) {
+  if (!d) return '—'
+  return new Date(d).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
 }
 
 // ── Status badge ──────────────────────────────────────────────────────────────
@@ -98,6 +105,8 @@ function LoadModal({ onClose, editing }: { onClose: () => void; editing: Load | 
     rate:         editing?.rate  != null ? String(editing.rate)  : '',
     status:       (editing?.status ?? 'Pending') as LoadStatus,
     eta:          editing?.eta          ?? '',
+    pickup_at:    editing?.pickup_at    ? editing.pickup_at.slice(0, 16)   : '',
+    deliver_by:   editing?.deliver_by   ? editing.deliver_by.slice(0, 16)  : '',
     broker_id:    editing?.broker_id    ?? '',
     driver_id:    editing?.driver_id    ?? '',
     truck_id:     editing?.truck_id     ?? '',
@@ -140,6 +149,8 @@ function LoadModal({ onClose, editing }: { onClose: () => void; editing: Load | 
         rate:         form.rate  ? Number(form.rate)  : null,
         status:       form.status,
         eta:          form.eta   || null,
+        pickup_at:    form.pickup_at  ? new Date(form.pickup_at).toISOString()  : null,
+        deliver_by:   form.deliver_by ? new Date(form.deliver_by).toISOString() : null,
         broker_id:    form.broker_id || null,
         driver_id:    form.driver_id || null,
         truck_id:     form.truck_id  || null,
@@ -239,6 +250,11 @@ function LoadModal({ onClose, editing }: { onClose: () => void; editing: Load | 
           </div>
 
           <Field label="ETA" value={form.eta} onChange={v => set('eta', v)} type="date" />
+
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Pickup appointment"   value={form.pickup_at}  onChange={v => set('pickup_at', v)}  type="datetime-local" />
+            <Field label="Delivery appointment" value={form.deliver_by} onChange={v => set('deliver_by', v)} type="datetime-local" />
+          </div>
         </div>
 
         {error && <p className="mt-3 text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
@@ -439,12 +455,14 @@ function DetailPanel({ load, onClose, onEdit, onDelete, deleting }: {
             <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">Details</p>
             <dl className="grid grid-cols-2 gap-x-4 gap-y-3">
               {[
-                ['Broker', load.brokers?.name],
-                ['Driver', driverName(load.drivers)],
-                ['Truck',  load.trucks?.unit_number],
-                ['ETA',    fmtDate(load.eta)],
-                ['Miles',  fmt(load.miles)],
-                ['Rate',   fmt(load.rate, '$')],
+                ['Broker',   load.brokers?.name],
+                ['Driver',   driverName(load.drivers)],
+                ['Truck',    load.trucks?.unit_number],
+                ['ETA',      fmtDate(load.eta)],
+                ['Pickup',   fmtAppt(load.pickup_at)],
+                ['Delivery', fmtAppt(load.deliver_by)],
+                ['Miles',    fmt(load.miles)],
+                ['Rate',     fmt(load.rate, '$')],
               ].map(([label, value]) => (
                 <div key={label as string}>
                   <dt className="text-xs text-gray-400">{label}</dt>
