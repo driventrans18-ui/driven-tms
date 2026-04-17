@@ -35,6 +35,68 @@ function useStats() {
   })
 }
 
+function startOfWeek(d = new Date()) {
+  const day = d.getDay() // 0 = Sunday
+  const diff = (day === 0 ? -6 : 1 - day) // Monday as start of week
+  const monday = new Date(d)
+  monday.setHours(0, 0, 0, 0)
+  monday.setDate(d.getDate() + diff)
+  return monday
+}
+
+function useWeekSummary() {
+  return useQuery({
+    queryKey: ['dashboard-week-summary'],
+    queryFn: async () => {
+      const since = startOfWeek().toISOString()
+      const { data, error } = await supabase
+        .from('loads')
+        .select('rate, miles, status')
+        .gte('created_at', since)
+      if (error) throw error
+      const rows = (data ?? []) as Array<{ rate: number | null; miles: number | null; status: string | null }>
+      const delivered = rows.filter(r => r.status === 'Delivered')
+      const revenue = delivered.reduce((s, r) => s + (r.rate ?? 0), 0)
+      const miles   = delivered.reduce((s, r) => s + (r.miles ?? 0), 0)
+      const rpm = miles > 0 ? revenue / miles : 0
+      return { revenue, miles, rpm, loads: delivered.length }
+    },
+  })
+}
+
+function fmtMoney(n: number) {
+  return '$' + n.toLocaleString('en-US', { maximumFractionDigits: 0 })
+}
+
+function WeeklySummary() {
+  const { data, isLoading } = useWeekSummary()
+  const r = data ?? { revenue: 0, miles: 0, rpm: 0, loads: 0 }
+  return (
+    <div className="bg-white rounded-xl border border-gray-100 p-5 mb-6">
+      <div className="flex items-baseline justify-between mb-3">
+        <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">This week</h2>
+        <span className="text-xs text-gray-400">{r.loads} delivered</span>
+      </div>
+      <div className="grid grid-cols-3 gap-4">
+        <div>
+          <p className="text-xs text-gray-400">Revenue</p>
+          <p className="text-2xl font-semibold text-gray-900 mt-0.5">{isLoading ? '—' : fmtMoney(r.revenue)}</p>
+        </div>
+        <div>
+          <p className="text-xs text-gray-400">Miles</p>
+          <p className="text-2xl font-semibold text-gray-900 mt-0.5">{isLoading ? '—' : r.miles.toLocaleString()}</p>
+        </div>
+        <div>
+          <p className="text-xs text-gray-400">$/mile</p>
+          <p className="text-2xl font-semibold mt-0.5" style={{ color: '#c8410a' }}>
+            {isLoading ? '—' : r.miles > 0 ? '$' + r.rpm.toFixed(2) : '—'}
+          </p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Stat card ─────────────────────────────────────────────────────────────────
 
 function StatCard({
@@ -111,6 +173,8 @@ export function Dashboard() {
         <h1 className="text-xl font-semibold text-gray-900">Dashboard</h1>
         <p className="text-sm text-gray-400 mt-0.5">Driven Transportation Inc. — Webster, NY</p>
       </div>
+
+      <WeeklySummary />
 
       {/* Stat cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">

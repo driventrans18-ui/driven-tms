@@ -10,7 +10,9 @@ interface Truck {
   year: number | null
 }
 
-export function Profile({ driver, email }: { driver: Driver; email: string | undefined }) {
+export function Profile({ driver, email, onOpenBrokers }: {
+  driver: Driver; email: string | undefined; onOpenBrokers: () => void
+}) {
   const { data: truck } = useQuery({
     queryKey: ['my-truck', driver.id],
     queryFn: async (): Promise<Truck | null> => {
@@ -69,6 +71,12 @@ export function Profile({ driver, email }: { driver: Driver; email: string | und
           <p className="text-sm text-gray-500">No truck on recent loads.</p>
         )}
       </div>
+
+      <button onClick={onOpenBrokers}
+        className="w-full py-3.5 rounded-xl bg-white text-gray-900 text-base font-semibold active:bg-gray-50 cursor-pointer flex items-center justify-between px-5">
+        <span>Brokers</span>
+        <span className="text-gray-300">›</span>
+      </button>
 
       <button onClick={signOut}
         className="w-full py-3.5 rounded-xl bg-white text-red-600 text-base font-semibold active:bg-gray-50 cursor-pointer">

@@ -9,6 +9,59 @@ import type { Driver } from '../hooks/useDriver'
 
 const ACTIVE_STATUSES = ['Assigned', 'In Transit']
 
+function startOfWeek(d = new Date()) {
+  const day = d.getDay()
+  const diff = day === 0 ? -6 : 1 - day
+  const monday = new Date(d)
+  monday.setHours(0, 0, 0, 0)
+  monday.setDate(d.getDate() + diff)
+  return monday
+}
+
+function WeekSummary({ driverId }: { driverId: string }) {
+  const { data } = useQuery({
+    queryKey: ['week-summary', driverId],
+    queryFn: async () => {
+      const since = startOfWeek().toISOString()
+      const { data, error } = await supabase.from('loads')
+        .select('rate, miles, status')
+        .eq('driver_id', driverId)
+        .eq('status', 'Delivered')
+        .gte('created_at', since)
+      if (error) throw error
+      const rows = (data ?? []) as Array<{ rate: number | null; miles: number | null }>
+      const revenue = rows.reduce((s, r) => s + (r.rate ?? 0), 0)
+      const miles   = rows.reduce((s, r) => s + (r.miles ?? 0), 0)
+      return { revenue, miles, loads: rows.length, rpm: miles > 0 ? revenue / miles : 0 }
+    },
+  })
+  const r = data ?? { revenue: 0, miles: 0, loads: 0, rpm: 0 }
+  return (
+    <div className="bg-white rounded-2xl p-5">
+      <div className="flex items-baseline justify-between mb-3">
+        <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">This week</h2>
+        <span className="text-xs text-gray-400">{r.loads} delivered</span>
+      </div>
+      <div className="grid grid-cols-3 gap-2">
+        <div>
+          <p className="text-[11px] text-gray-400">Revenue</p>
+          <p className="text-xl font-bold text-gray-900 mt-0.5">${r.revenue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</p>
+        </div>
+        <div>
+          <p className="text-[11px] text-gray-400">Miles</p>
+          <p className="text-xl font-bold text-gray-900 mt-0.5">{r.miles.toLocaleString()}</p>
+        </div>
+        <div>
+          <p className="text-[11px] text-gray-400">$/mile</p>
+          <p className="text-xl font-bold mt-0.5" style={{ color: '#c8410a' }}>
+            {r.miles > 0 ? '$' + r.rpm.toFixed(2) : '—'}
+          </p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function Home({ driver, onGoToLoads }: { driver: Driver; onGoToLoads: () => void }) {
   const qc = useQueryClient()
   const { summary, setStatus } = useHos(driver.id)
@@ -109,6 +162,8 @@ export function Home({ driver, onGoToLoads }: { driver: Driver; onGoToLoads: () 
           <p className="text-sm text-gray-500">No active load. Pull a load from Loads tab.</p>
         </div>
       )}
+
+      <WeekSummary driverId={driver.id} />
 
       <div className="bg-white rounded-2xl p-5">
         <div className="flex items-center justify-between mb-3">

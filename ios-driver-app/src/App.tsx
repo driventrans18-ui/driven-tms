@@ -5,6 +5,7 @@ import { Login } from './screens/Login'
 import { Home } from './screens/Home'
 import { Loads } from './screens/Loads'
 import { Brokers } from './screens/Brokers'
+import { Expenses } from './screens/Expenses'
 import { Invoices } from './screens/Invoices'
 import { Profile } from './screens/Profile'
 import { TabBar, type TabKey, TABS } from './components/TabBar'
@@ -45,6 +46,7 @@ function Shell({ tab, setTab, userId, email }: {
   tab: TabKey; setTab: (k: TabKey) => void; userId: string; email: string | undefined
 }) {
   const { data: driver, isLoading, error } = useDriver(userId, email)
+  const [brokersOpen, setBrokersOpen] = useState(false)
 
   if (isLoading) {
     return (
@@ -70,11 +72,22 @@ function Shell({ tab, setTab, userId, email }: {
       <main className="px-4 pb-28">
         {tab === 'home'     && <Home driver={driver} onGoToLoads={() => setTab('loads')} />}
         {tab === 'loads'    && <Loads driver={driver} />}
-        {tab === 'brokers'  && <Brokers />}
+        {tab === 'expenses' && <Expenses />}
         {tab === 'invoices' && <Invoices driver={driver} />}
-        {tab === 'profile'  && <Profile driver={driver} email={email} />}
+        {tab === 'profile'  && <Profile driver={driver} email={email} onOpenBrokers={() => setBrokersOpen(true)} />}
       </main>
       <TabBar active={tab} onChange={setTab} />
+      {brokersOpen && (
+        <div className="fixed inset-0 z-50 bg-[#f2f2f7] flex flex-col" style={{ paddingTop: 'env(safe-area-inset-top, 0)' }}>
+          <header className="px-4 pt-4 pb-3 flex items-center justify-between">
+            <h1 className="text-2xl font-bold text-gray-900">Brokers</h1>
+            <button onClick={() => setBrokersOpen(false)} className="text-[#c8410a] text-base font-medium cursor-pointer">Done</button>
+          </header>
+          <div className="flex-1 overflow-y-auto px-4 pb-6">
+            <Brokers />
+          </div>
+        </div>
+      )}
     </div>
   )
 }

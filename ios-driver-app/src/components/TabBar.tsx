@@ -1,11 +1,11 @@
 import type { ReactNode } from 'react'
 
-export type TabKey = 'home' | 'loads' | 'brokers' | 'invoices' | 'profile'
+export type TabKey = 'home' | 'loads' | 'expenses' | 'invoices' | 'profile'
 
 export const TABS: { key: TabKey; label: string; icon: ReactNode }[] = [
   { key: 'home',     label: 'Home',     icon: <HomeIcon /> },
   { key: 'loads',    label: 'Loads',    icon: <BoxIcon /> },
-  { key: 'brokers',  label: 'Brokers',  icon: <PhoneIcon /> },
+  { key: 'expenses', label: 'Expenses', icon: <FuelIcon /> },
   { key: 'invoices', label: 'Invoices', icon: <DocIcon /> },
   { key: 'profile',  label: 'Profile',  icon: <UserIcon /> },
 ]
@@ -51,10 +51,13 @@ function BoxIcon() {
     </svg>
   )
 }
-function PhoneIcon() {
+function FuelIcon() {
   return (
     <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M22 16.92v3a2 2 0 01-2.18 2 19.8 19.8 0 01-8.63-3.07 19.5 19.5 0 01-6-6A19.8 19.8 0 012.12 4.18 2 2 0 014.11 2h3a2 2 0 012 1.72c.13.96.37 1.9.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.91.33 1.85.57 2.81.7A2 2 0 0122 16.92z" />
+      <path d="M3 22V4a1 1 0 011-1h8a1 1 0 011 1v18" />
+      <path d="M3 10h10" />
+      <path d="M13 7l4 2v9a2 2 0 01-2 2h0a2 2 0 01-2-2v-3" />
+      <path d="M15 5v3" />
     </svg>
   )
 }

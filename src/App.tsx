@@ -8,7 +8,9 @@ import { Expenses } from './pages/Expenses'
 import { Trucks } from './pages/Trucks'
 import { Drivers } from './pages/Drivers'
 import { Brokers } from './pages/Brokers'
+import { Customers } from './pages/Customers'
 import { Maintenance } from './pages/Maintenance'
+import { Settings } from './pages/Settings'
 import { ProtectedRoute } from './components/ProtectedRoute'
 
 const queryClient = new QueryClient()
@@ -26,7 +28,9 @@ function App() {
           <Route path="/trucks" element={<ProtectedRoute><Trucks /></ProtectedRoute>} />
           <Route path="/drivers" element={<ProtectedRoute><Drivers /></ProtectedRoute>} />
           <Route path="/brokers" element={<ProtectedRoute><Brokers /></ProtectedRoute>} />
+          <Route path="/customers" element={<ProtectedRoute><Customers /></ProtectedRoute>} />
           <Route path="/maintenance" element={<ProtectedRoute><Maintenance /></ProtectedRoute>} />
+          <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
       </BrowserRouter>
