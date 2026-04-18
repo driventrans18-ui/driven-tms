@@ -23,6 +23,15 @@ export interface InvoicePdfData {
   company: {
     name: string
     logoDataUrl?: string | null // base64 data URL when available
+    address?:    string | null
+    city?:       string | null
+    state?:      string | null
+    zip?:        string | null
+    phone?:      string | null
+    email?:      string | null
+    mc_number?:  string | null
+    dot_number?: string | null
+    ein?:        string | null
   }
   billTo: {
     name: string
@@ -100,6 +109,32 @@ export function generateInvoicePdf(data: InvoicePdfData): Blob {
   })
 
   cursorY += 96
+
+  // ── Company "From" block (address / MC / DOT / contact) ──────────────────
+  const cityStateZip = [data.company.city, [data.company.state, data.company.zip].filter(Boolean).join(' ')]
+    .filter(Boolean).join(', ')
+  const idBadges = [
+    data.company.mc_number  ? `MC# ${data.company.mc_number}`   : null,
+    data.company.dot_number ? `DOT# ${data.company.dot_number}` : null,
+    data.company.ein        ? `EIN ${data.company.ein}`         : null,
+  ].filter(Boolean).join(' · ')
+  const fromLines = [
+    data.company.address ?? null,
+    cityStateZip || null,
+    [data.company.phone, data.company.email].filter(Boolean).join('  ·  ') || null,
+    idBadges || null,
+  ].filter(Boolean) as string[]
+
+  if (fromLines.length > 0) {
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(10)
+    doc.setTextColor(MUTED)
+    fromLines.forEach(line => {
+      doc.text(line, margin, cursorY)
+      cursorY += 13
+    })
+    cursorY += 8
+  }
 
   // ── Bill to block ─────────────────────────────────────────────────────────
   doc.setFont('helvetica', 'bold')

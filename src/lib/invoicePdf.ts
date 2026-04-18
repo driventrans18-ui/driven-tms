@@ -47,9 +47,18 @@ interface InvoiceRow {
 }
 
 interface CompanyRow {
-  company_name: string | null
-  logo_path: string | null
-  factoring_email: string | null
+  company_name:   string | null
+  logo_path:      string | null
+  factoring_email:string | null
+  address:        string | null
+  city:           string | null
+  state:          string | null
+  zip:            string | null
+  phone:          string | null
+  email:          string | null
+  mc_number:      string | null
+  dot_number:     string | null
+  ein:            string | null
 }
 
 // Entry point. Fetches everything needed and returns a Blob ready to
@@ -71,7 +80,7 @@ export async function generateInvoicePdf(invoiceId: string): Promise<Blob> {
 
   const { data: company } = await supabase
     .from('company_settings')
-    .select('company_name, logo_path, factoring_email')
+    .select('company_name, logo_path, factoring_email, address, city, state, zip, phone, email, mc_number, dot_number, ein')
     .limit(1)
     .maybeSingle()
 
@@ -133,11 +142,21 @@ function render(invoice: InvoiceRow, company: CompanyRow | null, logoDataUrl: st
   doc.text(companyName, MARGIN, cursorY)
   cursorY += 14
   doc.setFontSize(9).setFont('helvetica', 'normal').setTextColor(110)
-  // TODO: replace with real address/MC/DOT once company_settings is expanded.
+  // Pull address + MC/DOT from company_settings. Any field left blank just
+  // drops its line — the layout tolerates any subset being missing.
+  const cityStateZip = [company?.city, [company?.state, company?.zip].filter(Boolean).join(' ')]
+    .filter(Boolean).join(', ')
+  const idBadges = [
+    company?.mc_number  ? `MC# ${company.mc_number}`   : null,
+    company?.dot_number ? `DOT# ${company.dot_number}` : null,
+    company?.ein        ? `EIN ${company.ein}`         : null,
+  ].filter(Boolean).join(' · ')
   const companyLines = [
-    'MC# — · DOT# —',
-    'Address on file with broker',
-  ]
+    company?.address ?? null,
+    cityStateZip || null,
+    [company?.phone, company?.email].filter(Boolean).join('  ·  ') || null,
+    idBadges || null,
+  ].filter(Boolean) as string[]
   companyLines.forEach(line => { doc.text(line, MARGIN, cursorY); cursorY += 12 })
 
   // ── Bill to ──────────────────────────────────────────────────────────────
