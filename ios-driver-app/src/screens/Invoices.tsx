@@ -1,6 +1,10 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
+import type { InvoicePdfData } from '../lib/invoicePdf'
+import { shareFile } from '../lib/share'
+import { DocViewer } from '../components/DocViewer'
+import { SwipeRow } from '../components/SwipeRow'
 import type { Driver } from '../hooks/useDriver'
 
 type InvoiceStatus = 'Draft' | 'Sent' | 'Overdue' | 'Paid'
@@ -67,17 +71,23 @@ const STATUS_BADGE: Record<InvoiceStatus, string> = {
 export function Invoices({ driver }: { driver: Driver }) {
   const qc = useQueryClient()
   const [openInvoice, setOpenInvoice] = useState<Invoice | null>(null)
+  const [form, setForm] = useState<{ editing: Invoice | null } | null>(null)
 
-  // All invoices connected to this driver's delivered loads.
+  // All invoices tied to this driver's loads, plus any manually-created
+  // invoices that aren't attached to a load yet. The left join on loads lets
+  // invoices with a null load_id through; we filter by driver_id on any
+  // joined load server-side and ignore orphan rows that join to another
+  // driver's load client-side.
   const { data: invoices = [], isLoading } = useQuery({
     queryKey: ['my-invoices', driver.id],
     queryFn: async () => {
       const { data, error } = await supabase.from('invoices')
-        .select('*, loads!inner(id, load_number, origin_city, origin_state, dest_city, dest_state, miles, driver_id), brokers(id, name, email, phone), customers(id, name, email, phone)')
-        .eq('loads.driver_id', driver.id)
+        .select('*, loads(id, load_number, origin_city, origin_state, dest_city, dest_state, miles, driver_id), brokers(id, name, email, phone), customers(id, name, email, phone)')
+        .or(`load_id.is.null,loads.driver_id.eq.${driver.id}`)
         .order('created_at', { ascending: false })
       if (error) throw error
-      return (data ?? []) as unknown as Invoice[]
+      const rows = (data ?? []) as unknown as (Invoice & { loads: (Invoice['loads'] & { driver_id?: string }) | null })[]
+      return rows.filter(r => !r.loads || r.loads.driver_id === driver.id) as Invoice[]
     },
   })
 
@@ -114,6 +124,18 @@ export function Invoices({ driver }: { driver: Driver }) {
     onError: (e: Error) => alert(e.message),
   })
 
+  const quickDeleteInvoice = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from('invoices').delete().eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['my-invoices', driver.id] })
+      qc.invalidateQueries({ queryKey: ['my-uninvoiced-loads', driver.id] })
+    },
+    onError: (e: Error) => alert(e.message),
+  })
+
   const totals = useMemo(() => {
     let paid = 0, outstanding = 0
     for (const inv of invoices) {
@@ -126,6 +148,14 @@ export function Invoices({ driver }: { driver: Driver }) {
 
   return (
     <div className="space-y-4">
+      <button
+        onClick={() => setForm({ editing: null })}
+        className="w-full py-3.5 rounded-xl text-white text-base font-semibold cursor-pointer"
+        style={{ background: '#c8410a' }}
+      >
+        + New Invoice
+      </button>
+
       <div className="grid grid-cols-2 gap-3">
         <div className="bg-white rounded-2xl p-4">
           <p className="text-[11px] text-gray-500 uppercase tracking-wide">Outstanding</p>
@@ -175,17 +205,27 @@ export function Invoices({ driver }: { driver: Driver }) {
             {invoices.map(inv => {
               const who = inv.customers?.name ?? inv.brokers?.name ?? '—'
               const cls = STATUS_BADGE[inv.status] ?? STATUS_BADGE.Draft
+              const label = inv.invoice_number || `#${inv.id.slice(0, 8)}`
               return (
                 <li key={inv.id}>
-                  <button onClick={() => setOpenInvoice(inv)}
-                    className="w-full text-left bg-white rounded-2xl p-4 active:bg-gray-50 cursor-pointer">
-                    <div className="flex items-center justify-between">
-                      <p className="text-sm text-gray-500">{inv.invoice_number || `#${inv.id.slice(0, 8)}`}</p>
-                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${cls}`}>{inv.status}</span>
-                    </div>
-                    <p className="text-base font-semibold text-gray-900 mt-1">{fmtMoney(inv.amount)}</p>
-                    <p className="text-sm text-gray-500 mt-0.5">{who} · Due {fmtDate(inv.due_date)}</p>
-                  </button>
+                  <SwipeRow
+                    onEdit={() => setForm({ editing: inv })}
+                    onDelete={() => {
+                      if (confirm(`Delete invoice ${label}? This cannot be undone.`)) {
+                        quickDeleteInvoice.mutate(inv.id)
+                      }
+                    }}
+                  >
+                    <button onClick={() => setOpenInvoice(inv)}
+                      className="w-full text-left bg-white rounded-2xl p-4 active:bg-gray-50 cursor-pointer">
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm text-gray-500">{label}</p>
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${cls}`}>{inv.status}</span>
+                      </div>
+                      <p className="text-base font-semibold text-gray-900 mt-1">{fmtMoney(inv.amount)}</p>
+                      <p className="text-sm text-gray-500 mt-0.5">{who} · Due {fmtDate(inv.due_date)}</p>
+                    </button>
+                  </SwipeRow>
                 </li>
               )
             })}
@@ -195,6 +235,9 @@ export function Invoices({ driver }: { driver: Driver }) {
 
       {openInvoice && (
         <InvoiceSheet invoice={openInvoice} driverId={driver.id} onClose={() => setOpenInvoice(null)} />
+      )}
+      {form && (
+        <InvoiceFormSheet driverId={driver.id} editing={form.editing} onClose={() => setForm(null)} />
       )}
     </div>
   )
@@ -208,7 +251,8 @@ function InvoiceSheet({ invoice, driverId, onClose }: {
   const qc = useQueryClient()
   const [logoUrl, setLogoUrl] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [busy, setBusy] = useState<'send' | null>(null)
+  const [busy, setBusy] = useState<'share' | 'preview' | null>(null)
+  const [preview, setPreview] = useState<{ url: string; fileName: string } | null>(null)
 
   const { data: settings } = useQuery({
     queryKey: ['company-settings'],
@@ -220,12 +264,17 @@ function InvoiceSheet({ invoice, driverId, onClose }: {
     },
   })
 
-  useMemo(() => {
+  useEffect(() => {
     if (!settings?.logo_path) { setLogoUrl(null); return }
     supabase.storage.from('branding').createSignedUrl(settings.logo_path, 3600).then(({ data }) => {
       if (data?.signedUrl) setLogoUrl(data.signedUrl)
     })
   }, [settings?.logo_path])
+
+  // Revoke the object URL when the preview sheet closes.
+  useEffect(() => {
+    return () => { if (preview) URL.revokeObjectURL(preview.url) }
+  }, [preview])
 
   const markPaid = useMutation({
     mutationFn: async () => {
@@ -260,56 +309,49 @@ function InvoiceSheet({ invoice, driverId, onClose }: {
   const origin = invoice.loads ? [invoice.loads.origin_city, invoice.loads.origin_state].filter(Boolean).join(', ') : ''
   const dest   = invoice.loads ? [invoice.loads.dest_city,   invoice.loads.dest_state].filter(Boolean).join(', ') : ''
 
-  async function buildBody() {
+  // Shared builder: gather everything the PDF generator needs so Preview and
+  // Share render identical output.
+  async function buildPdfData(): Promise<{ data: InvoicePdfData; fileName: string }> {
+    // Lazy-load the PDF generator — jspdf + html2canvas are heavy and only
+    // matter once the user actually wants a PDF.
+    const { logoToDataUrl } = await import('../lib/invoicePdf')
     const companyName = settings?.company_name ?? 'Driven Transportation'
-    const invoiceLabel = invoice.invoice_number || `#${invoice.id.slice(0, 8)}`
-    const lines: (string | null)[] = [
-      `Invoice ${invoiceLabel} from ${companyName}`,
-      ``,
-      `Bill to: ${billTo?.name ?? '—'}`,
-      `Load: ${loadLabel}`,
-    ]
-    if (origin || dest) lines.push(`Route: ${origin || '—'} → ${dest || '—'}`)
-    if (invoice.loads?.miles != null) lines.push(`Miles: ${invoice.loads.miles.toLocaleString()}`)
-    lines.push(`Amount: ${fmtMoney(invoice.amount)}`)
-    if (invoice.issued_date) lines.push(`Issued: ${fmtDate(invoice.issued_date)}`)
-    if (invoice.due_date)    lines.push(`Due: ${fmtDate(invoice.due_date)}`)
-
-    // Attach signed links to rate_con / pod documents so the recipient can
-    // verify the billing with the source documents. 7-day validity.
-    if (invoice.load_id) {
-      const { data: docs } = await supabase.from('load_documents')
-        .select('kind, file_name, storage_path')
-        .eq('load_id', invoice.load_id)
-        .in('kind', ['rate_con', 'pod'])
-      if (docs && docs.length > 0) {
-        lines.push('')
-        lines.push('Supporting documents (valid 7 days):')
-        for (const d of docs) {
-          const { data } = await supabase.storage.from('load-documents')
-            .createSignedUrl(d.storage_path, 60 * 60 * 24 * 7)
-          lines.push(`- ${String(d.kind).toUpperCase()} (${d.file_name}): ${data?.signedUrl ?? '(link unavailable)'}`)
-        }
-      }
+    const invoiceLabel = invoice.invoice_number || `${invoice.id.slice(0, 8)}`
+    const routeDesc = origin && dest ? `${loadLabel} · ${origin} → ${dest}` : `Load ${loadLabel}`
+    const logoDataUrl = logoUrl ? await logoToDataUrl(logoUrl) : null
+    const data: InvoicePdfData = {
+      invoice: {
+        number:     invoiceLabel,
+        issuedDate: invoice.issued_date,
+        dueDate:    invoice.due_date,
+        status:     invoice.status,
+        notes:      invoice.notes,
+      },
+      company: { name: companyName, logoDataUrl },
+      billTo: billTo ? {
+        name:  billTo.name,
+        email: billTo.email,
+        phone: billTo.phone,
+      } : null,
+      lineItems: [{
+        description: routeDesc,
+        miles:       invoice.loads?.miles ?? null,
+        amount:      invoice.amount ?? 0,
+      }],
+      totalAmount: invoice.amount ?? 0,
     }
-
-    if (invoice.notes) {
-      lines.push('')
-      lines.push('Notes:')
-      lines.push(invoice.notes)
-    }
-
-    lines.push('')
-    lines.push(`— ${companyName}`)
-    return { body: lines.filter(l => l != null).join('\n'), subject: `Invoice ${invoiceLabel} — ${companyName}` }
+    const safeName = invoiceLabel.replace(/[^A-Za-z0-9._-]/g, '_')
+    return { data, fileName: `Invoice-${safeName}.pdf` }
   }
 
-  async function sendEmail() {
-    setBusy('send'); setError(null)
+  async function openPreview() {
+    setBusy('preview'); setError(null)
     try {
-      const { body, subject } = await buildBody()
-      const to = billTo?.email ?? ''
-      window.location.href = `mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
+      const { generateInvoicePdf } = await import('../lib/invoicePdf')
+      const { data, fileName } = await buildPdfData()
+      const blob = generateInvoicePdf(data)
+      const url = URL.createObjectURL(blob)
+      setPreview({ url, fileName })
     } catch (e) {
       setError((e as Error).message)
     } finally {
@@ -317,15 +359,43 @@ function InvoiceSheet({ invoice, driverId, onClose }: {
     }
   }
 
-  async function sendText() {
-    setBusy('send'); setError(null)
+  // Archive the generated PDF + flip Draft→Sent so the driver has a history
+  // they can re-share. Upload failure is non-fatal — we still want the share
+  // sheet to open.
+  async function archiveAndFlip(blob: Blob, fileName: string) {
     try {
-      const { body } = await buildBody()
-      const to = billTo?.phone ?? ''
-      // iOS allows sms:NUMBER&body=... with the ampersand
-      window.location.href = `sms:${to}${to ? '&' : '?'}body=${encodeURIComponent(body)}`
+      const path = `${invoice.id}/${Date.now()}-${fileName}`
+      const { error: upErr } = await supabase.storage.from('invoice-pdfs').upload(path, blob, {
+        contentType: 'application/pdf',
+        upsert: false,
+      })
+      if (upErr) console.warn('Invoice archive failed:', upErr.message)
     } catch (e) {
-      setError((e as Error).message)
+      console.warn('Invoice archive threw:', (e as Error).message)
+    }
+    if (invoice.status === 'Draft') {
+      await supabase.from('invoices').update({ status: 'Sent' }).eq('id', invoice.id)
+      qc.invalidateQueries({ queryKey: ['my-invoices', driverId] })
+    }
+  }
+
+  async function shareInvoice() {
+    setBusy('share'); setError(null)
+    try {
+      const { generateInvoicePdf } = await import('../lib/invoicePdf')
+      const { data, fileName } = await buildPdfData()
+      const blob = generateInvoicePdf(data)
+      const invoiceLabel = invoice.invoice_number || `#${invoice.id.slice(0, 8)}`
+      const companyName = settings?.company_name ?? 'Driven Transportation'
+      await shareFile({
+        blob, filename: fileName, mimeType: 'application/pdf',
+        title: `Invoice ${invoiceLabel}`,
+        text: `Invoice ${invoiceLabel} from ${companyName} — ${fmtMoney(invoice.amount)}`,
+      })
+      await archiveAndFlip(blob, fileName)
+    } catch (e) {
+      const msg = (e as Error).message
+      if (!/abort|cancel/i.test(msg)) setError(msg)
     } finally {
       setBusy(null)
     }
@@ -378,22 +448,24 @@ function InvoiceSheet({ invoice, driverId, onClose }: {
 
         <div className="grid grid-cols-2 gap-2 mt-4">
           <button
-            onClick={sendEmail}
+            onClick={openPreview}
+            disabled={busy !== null}
+            className="py-3 rounded-xl border border-gray-200 text-gray-900 text-base font-semibold disabled:opacity-50 cursor-pointer bg-white active:bg-gray-50"
+          >
+            {busy === 'preview' ? 'Rendering…' : 'Preview PDF'}
+          </button>
+          <button
+            onClick={shareInvoice}
             disabled={busy !== null}
             className="py-3 rounded-xl text-white text-base font-semibold disabled:opacity-50 cursor-pointer"
             style={{ background: '#c8410a' }}
           >
-            {billTo?.email ? 'Email' : 'Email…'}
-          </button>
-          <button
-            onClick={sendText}
-            disabled={busy !== null}
-            className="py-3 rounded-xl text-white text-base font-semibold disabled:opacity-50 cursor-pointer"
-            style={{ background: '#0a7fc8' }}
-          >
-            {billTo?.phone ? 'Text' : 'Text…'}
+            {busy === 'share' ? 'Preparing…' : 'Share invoice'}
           </button>
         </div>
+        <p className="mt-2 text-[11px] text-gray-500 text-center">
+          Share opens iOS's share sheet — pick Mail, Messages, AirDrop, Save to Files, or Print.
+        </p>
 
         {invoice.status !== 'Paid' && (
           <button
@@ -418,6 +490,235 @@ function InvoiceSheet({ invoice, driverId, onClose }: {
         </button>
 
         {error && <p className="mt-3 text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
+      </div>
+      {preview && (
+        <DocViewer
+          url={preview.url}
+          mimeType="application/pdf"
+          fileName={preview.fileName}
+          onClose={() => setPreview(null)}
+        />
+      )}
+    </div>
+  )
+}
+
+// ── Invoice create / edit form ───────────────────────────────────────────────
+
+function addDays(iso: string | null, days: number): string {
+  const d = iso ? new Date(iso + 'T00:00:00') : new Date()
+  d.setDate(d.getDate() + days)
+  return d.toISOString().slice(0, 10)
+}
+
+export function InvoiceFormSheet({ driverId, editing, onClose }: {
+  driverId: string
+  editing?: Invoice | null
+  onClose: () => void
+}) {
+  const qc = useQueryClient()
+  const isEdit = !!editing
+  const [form, setForm] = useState({
+    invoice_number: editing?.invoice_number ?? '',
+    amount:         editing?.amount != null ? String(editing.amount) : '',
+    issued_date:    editing?.issued_date ?? new Date().toISOString().slice(0, 10),
+    due_date:       editing?.due_date    ?? addDays(null, 30),
+    paid_date:      editing?.paid_date   ?? '',
+    status:         editing?.status      ?? ('Draft' as InvoiceStatus),
+    notes:          editing?.notes       ?? '',
+    load_id:        editing?.load_id     ?? '',
+    broker_id:      editing?.broker_id   ?? '',
+    customer_id:    editing?.customer_id ?? '',
+  })
+  const [error, setError] = useState<string | null>(null)
+  const set = <K extends keyof typeof form>(k: K, v: typeof form[K]) =>
+    setForm(f => ({ ...f, [k]: v }))
+
+  // Bill-to picker options: brokers + customers. Selecting one clears the other
+  // so we never write both.
+  const { data: brokers = [] } = useQuery({
+    queryKey: ['brokers-simple'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('brokers').select('id, name').order('name')
+      if (error) throw error
+      return (data ?? []) as Array<{ id: string; name: string }>
+    },
+  })
+  const { data: customers = [] } = useQuery({
+    queryKey: ['customers-simple'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('customers').select('id, name').order('name')
+      if (error) throw error
+      return (data ?? []) as Array<{ id: string; name: string }>
+    },
+  })
+  const { data: driverLoads = [] } = useQuery({
+    queryKey: ['driver-loads-for-invoice', driverId],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('loads')
+        .select('id, load_number, origin_city, dest_city, rate, status')
+        .eq('driver_id', driverId)
+        .order('created_at', { ascending: false })
+        .limit(50)
+      if (error) throw error
+      return (data ?? []) as Array<{
+        id: string; load_number: string | null
+        origin_city: string | null; dest_city: string | null
+        rate: number | null; status: string
+      }>
+    },
+  })
+
+  const save = useMutation({
+    mutationFn: async () => {
+      const amount = form.amount ? Number(form.amount) : null
+      if (amount == null || !Number.isFinite(amount) || amount <= 0) {
+        throw new Error('Enter an amount greater than zero.')
+      }
+      const payload = {
+        invoice_number: form.invoice_number || null,
+        amount,
+        issued_date:    form.issued_date || null,
+        due_date:       form.due_date    || null,
+        paid_date:      form.status === 'Paid' ? (form.paid_date || new Date().toISOString().slice(0, 10)) : null,
+        status:         form.status,
+        notes:          form.notes || null,
+        load_id:        form.load_id     || null,
+        broker_id:      form.broker_id   || null,
+        customer_id:    form.customer_id || null,
+      }
+      const { error } = isEdit && editing
+        ? await supabase.from('invoices').update(payload).eq('id', editing.id)
+        : await supabase.from('invoices').insert(payload)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['my-invoices', driverId] })
+      qc.invalidateQueries({ queryKey: ['my-uninvoiced-loads', driverId] })
+      onClose()
+    },
+    onError: (e: Error) => setError(e.message),
+  })
+
+  // When a load is picked, prefill amount from the load's rate if the user
+  // hasn't already entered one.
+  function pickLoad(loadId: string) {
+    set('load_id', loadId)
+    const l = driverLoads.find(x => x.id === loadId)
+    if (l && !form.amount && l.rate != null) set('amount', String(l.rate))
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end" role="dialog" aria-modal="true">
+      <div className="absolute inset-0 bg-black/30" onClick={onClose} />
+      <div
+        className="relative bg-white w-full rounded-t-3xl p-6 max-h-[92vh] overflow-y-auto"
+        style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 16px) + 16px)' }}
+      >
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-bold text-gray-900">{isEdit ? 'Edit Invoice' : 'New Invoice'}</h2>
+          <button onClick={onClose} className="text-gray-400 text-lg cursor-pointer">✕</button>
+        </div>
+
+        <div className="space-y-3">
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Invoice #</label>
+            <input value={form.invoice_number} onChange={e => set('invoice_number', e.target.value)} placeholder="INV-1042"
+              className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-base" />
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-2">Status</label>
+            <div className="grid grid-cols-4 gap-1 bg-gray-100 rounded-xl p-1">
+              {(['Draft', 'Sent', 'Overdue', 'Paid'] as InvoiceStatus[]).map(s => {
+                const on = form.status === s
+                return (
+                  <button key={s} onClick={() => set('status', s)}
+                    className="py-2 rounded-lg text-xs font-medium cursor-pointer"
+                    style={on ? { background: '#c8410a', color: 'white' } : { color: '#6b7280' }}>
+                    {s}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Bill to</label>
+            <select
+              value={form.customer_id || (form.broker_id ? `b:${form.broker_id}` : '')}
+              onChange={e => {
+                const v = e.target.value
+                if (!v) { set('customer_id', ''); set('broker_id', ''); return }
+                if (v.startsWith('b:')) { set('broker_id', v.slice(2)); set('customer_id', '') }
+                else                    { set('customer_id', v);       set('broker_id', '') }
+              }}
+              className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-base">
+              <option value="">— None —</option>
+              {customers.length > 0 && <optgroup label="Customers">
+                {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </optgroup>}
+              {brokers.length > 0 && <optgroup label="Brokers">
+                {brokers.map(b => <option key={b.id} value={`b:${b.id}`}>{b.name}</option>)}
+              </optgroup>}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Attached load (optional)</label>
+            <select value={form.load_id} onChange={e => pickLoad(e.target.value)}
+              className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-base">
+              <option value="">— None —</option>
+              {driverLoads.map(l => (
+                <option key={l.id} value={l.id}>
+                  {(l.load_number || l.id.slice(0, 8)) + ' · ' + [l.origin_city, l.dest_city].filter(Boolean).join(' → ')}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Amount</label>
+            <input type="number" inputMode="decimal" value={form.amount} onChange={e => set('amount', e.target.value)} placeholder="0.00"
+              className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-base" />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Issued</label>
+              <input type="date" value={form.issued_date} onChange={e => set('issued_date', e.target.value)}
+                className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-base" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Due</label>
+              <input type="date" value={form.due_date} onChange={e => set('due_date', e.target.value)}
+                className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-base" />
+            </div>
+          </div>
+
+          {form.status === 'Paid' && (
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Paid on</label>
+              <input type="date" value={form.paid_date} onChange={e => set('paid_date', e.target.value)}
+                className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-base" />
+            </div>
+          )}
+
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Notes</label>
+            <textarea value={form.notes} onChange={e => set('notes', e.target.value)} placeholder="Payment terms, PO #, etc."
+              rows={3}
+              className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-base" />
+          </div>
+        </div>
+
+        {error && <p className="mt-3 text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
+
+        <button onClick={() => save.mutate()} disabled={save.isPending}
+          className="w-full mt-5 py-3.5 rounded-xl text-white text-base font-semibold disabled:opacity-50 cursor-pointer"
+          style={{ background: '#c8410a' }}>
+          {save.isPending ? 'Saving…' : isEdit ? 'Save Changes' : 'Create Invoice'}
+        </button>
       </div>
     </div>
   )

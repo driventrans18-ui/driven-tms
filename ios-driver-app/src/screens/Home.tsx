@@ -5,7 +5,7 @@ import { cacheGet, cacheSet } from '../lib/cache'
 import { uploadBol } from '../lib/bolDocuments'
 import { captureStampedPhoto } from '../lib/stampedCamera'
 import { LoadCard, type LoadCardLoad } from '../components/LoadCard'
-import { ExpirationsCard } from '../components/ExpirationsCard'
+import { RemindersCard } from '../components/RemindersCard'
 import { LoadCalendar } from '../components/LoadCalendar'
 import type { Driver } from '../hooks/useDriver'
 
@@ -310,7 +310,7 @@ export function Home({ driver, onGoToLoads, onOpenDriverMode }: {
 
       <Summary driverId={driver.id} />
 
-      <ExpirationsCard driverId={driver.id} />
+      <RemindersCard driverId={driver.id} />
 
       <LoadCalendar driverId={driver.id} />
     </div>
