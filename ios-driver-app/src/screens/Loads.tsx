@@ -5,6 +5,7 @@ import { LoadCard, type LoadCardLoad } from '../components/LoadCard'
 import { DocViewer } from '../components/DocViewer'
 import { CityAutocomplete } from '../components/CityAutocomplete'
 import { SwipeRow } from '../components/SwipeRow'
+import { ScreenHeader, PlusButton } from '../components/ScreenHeader'
 import { isDocScanAvailable, scanDocument } from '../lib/docScan'
 import { captureStampedPhoto } from '../lib/stampedCamera'
 import { uploadBol } from '../lib/bolDocuments'
@@ -115,13 +116,10 @@ export function Loads({ driver }: { driver: Driver }) {
 
   return (
     <div className="space-y-4">
-      <button
-        onClick={() => setForm({ editing: null })}
-        className="w-full py-3.5 rounded-xl text-white text-base font-semibold cursor-pointer"
-        style={{ background: '#c8410a' }}
-      >
-        + New Load
-      </button>
+      <ScreenHeader
+        title="Loads"
+        action={<PlusButton onClick={() => setForm({ editing: null })} label="New load" />}
+      />
 
       <div className="flex gap-1 bg-white rounded-xl p-1">
         {TABS.map(t => {

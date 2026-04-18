@@ -120,14 +120,23 @@ export function RemindersCard({ driverId }: { driverId: string }) {
   const attention = items.filter(i => !i.paid_date && daysLeft(i.expires_at) <= 90).length
 
   return (
-    <div className="bg-white rounded-2xl p-5">
-      <div className="flex items-center justify-between mb-3">
-        <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Upcoming reminders</h2>
+    <div>
+      <div className="flex items-center justify-between mb-2 px-1">
+        <h2 className="text-base font-semibold text-gray-900">Upcoming Reminders</h2>
         {attention > 0 && <span className="text-xs text-gray-400">{attention} need attention</span>}
       </div>
 
+      <div className="bg-white rounded-2xl p-5">
       {sorted.length === 0 ? (
-        <p className="text-sm text-gray-400">No reminders yet. Add one to track renewals, IFTA, inspections, etc.</p>
+        <div className="flex flex-col items-center justify-center py-8 gap-3">
+          <div className="w-14 h-14 rounded-full bg-gray-100 flex items-center justify-center" aria-hidden>
+            <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="#9ca3af" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M6 8a6 6 0 0112 0c0 7 3 9 3 9H3s3-2 3-9" />
+              <path d="M10.3 21a1.94 1.94 0 003.4 0" />
+            </svg>
+          </div>
+          <p className="text-sm text-gray-500">No reminders yet.</p>
+        </div>
       ) : (
         <ul className="space-y-2">
           {sorted.map(item => {
@@ -179,11 +188,12 @@ export function RemindersCard({ driverId }: { driverId: string }) {
 
       <button
         onClick={() => setForm({ editing: null })}
-        className="w-full mt-3 py-2.5 rounded-xl text-white text-sm font-semibold cursor-pointer"
+        className="w-full mt-3 py-3 rounded-xl text-white text-base font-semibold cursor-pointer"
         style={{ background: '#c8410a' }}
       >
-        + Add reminder
+        Add Reminder
       </button>
+      </div>
 
       {form && (
         <ReminderFormSheet

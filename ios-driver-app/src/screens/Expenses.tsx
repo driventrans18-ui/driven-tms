@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { SwipeRow } from '../components/SwipeRow'
+import { ScreenHeader, PlusButton } from '../components/ScreenHeader'
 
 const CATEGORIES = ['Fuel', 'Maintenance', 'Tolls', 'Insurance', 'Permits', 'Lumper', 'Other'] as const
 type Category = typeof CATEGORIES[number]
@@ -18,14 +19,25 @@ interface Expense {
   created_at: string
 }
 
-const BADGE: Record<string, string> = {
-  Fuel:        'bg-yellow-100 text-yellow-700',
-  Maintenance: 'bg-orange-100 text-orange-700',
-  Tolls:       'bg-blue-100 text-blue-700',
-  Insurance:   'bg-purple-100 text-purple-700',
-  Permits:     'bg-teal-100 text-teal-700',
-  Lumper:      'bg-pink-100 text-pink-700',
-  Other:       'bg-gray-100 text-gray-600',
+// Small colored square with a letter — matches the mockup's per-category
+// leading icon. Colors mirror BADGE tints so category is visually consistent.
+const ICON_BG: Record<string, string> = {
+  Fuel:        '#fef3c7',
+  Maintenance: '#ffedd5',
+  Tolls:       '#dbeafe',
+  Insurance:   '#ede9fe',
+  Permits:     '#ccfbf1',
+  Lumper:      '#fce7f3',
+  Other:       '#f3f4f6',
+}
+const ICON_FG: Record<string, string> = {
+  Fuel:        '#b45309',
+  Maintenance: '#c2410c',
+  Tolls:       '#1d4ed8',
+  Insurance:   '#6d28d9',
+  Permits:     '#0f766e',
+  Lumper:      '#be185d',
+  Other:       '#4b5563',
 }
 
 function fmtMoney(n: number | null | undefined) {
@@ -72,18 +84,15 @@ export function Expenses() {
 
   return (
     <div className="space-y-4">
-      <button onClick={() => setOpen({ editing: null })}
-        className="w-full py-3.5 rounded-xl text-white text-base font-semibold cursor-pointer"
-        style={{ background: '#c8410a' }}>
-        + Add Expense
-      </button>
+      <ScreenHeader
+        title="Expenses"
+        action={<PlusButton onClick={() => setOpen({ editing: null })} label="Add expense" />}
+      />
 
-      <div className="bg-white rounded-2xl p-4">
-        <div className="flex items-baseline justify-between">
-          <p className="text-xs text-gray-500 uppercase tracking-wide">{catFilter === 'All' ? 'Total' : catFilter}</p>
-          <p className="text-xs text-gray-400">{filtered.length} records</p>
-        </div>
-        <p className="text-3xl font-bold text-gray-900 mt-1">{fmtMoney(total)}</p>
+      {/* Total headline — matches the mockup: centered label + large value. */}
+      <div className="bg-white rounded-2xl p-5 text-center">
+        <p className="text-sm text-gray-500">{catFilter === 'All' ? 'Total' : catFilter}</p>
+        <p className="text-4xl font-bold text-gray-900 mt-1">{fmtMoney(total)}</p>
       </div>
 
       <div className="flex gap-1.5 overflow-x-auto bg-white rounded-xl p-1">
@@ -106,7 +115,7 @@ export function Expenses() {
       ) : (
         <ul className="space-y-2">
           {filtered.map(e => {
-            const cls = BADGE[e.category ?? 'Other'] ?? BADGE.Other
+            const cat = e.category ?? 'Other'
             const label = `${e.category ?? 'expense'} ${fmtMoney(e.amount)}`
             return (
               <li key={e.id}>
@@ -117,15 +126,21 @@ export function Expenses() {
                   }}
                 >
                   <button onClick={() => setOpen({ editing: e })}
-                    className="w-full text-left bg-white rounded-2xl p-4 active:bg-gray-50 cursor-pointer">
-                    <div className="flex items-center justify-between">
-                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${cls}`}>{e.category ?? 'Other'}</span>
-                      <span className="text-base font-semibold text-gray-900">{fmtMoney(e.amount)}</span>
-                    </div>
-                    <div className="flex items-center justify-between mt-2 text-sm text-gray-500">
-                      <span className="truncate">{e.vendor ?? '—'}</span>
-                      <span>{fmtDate(e.expense_date)}</span>
-                    </div>
+                    className="w-full text-left bg-white rounded-2xl p-4 active:bg-gray-50 cursor-pointer flex items-center gap-3">
+                    <span
+                      className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 text-sm font-bold"
+                      style={{ background: ICON_BG[cat] ?? ICON_BG.Other, color: ICON_FG[cat] ?? ICON_FG.Other }}
+                      aria-hidden
+                    >
+                      {cat[0]}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-base font-semibold text-gray-900 truncate">{cat}</span>
+                      <span className="block text-xs text-gray-500 mt-0.5 truncate">
+                        {[e.vendor, fmtDate(e.expense_date)].filter(Boolean).join(' · ') || fmtDate(e.expense_date)}
+                      </span>
+                    </span>
+                    <span className="text-base font-semibold text-gray-900 shrink-0">{fmtMoney(e.amount)}</span>
                   </button>
                 </SwipeRow>
               </li>
