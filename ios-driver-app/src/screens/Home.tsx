@@ -37,19 +37,33 @@ function Summary({ driverId }: { driverId: string }) {
     queryKey: ['driver-summary', driverId, range],
     queryFn: async () => {
       const since = (range === 'week' ? startOfWeek() : range === 'month' ? startOfMonth() : startOfYear()).toISOString()
-      const { data, error } = await supabase.from('loads')
-        .select('rate, miles, deadhead_miles, status')
-        .eq('driver_id', driverId)
-        .eq('status', 'Delivered')
-        .gte('created_at', since)
-      if (error) throw error
-      const rows = (data ?? []) as Array<{ rate: number | null; miles: number | null; deadhead_miles: number | null }>
-      const revenue = rows.reduce((s, r) => s + (r.rate ?? 0), 0)
-      const miles   = rows.reduce((s, r) => s + (r.miles ?? 0) + (r.deadhead_miles ?? 0), 0)
-      return { revenue, miles, loads: rows.length, rpm: miles > 0 ? revenue / miles : 0 }
+      const [loadsRes, expensesRes] = await Promise.all([
+        supabase.from('loads')
+          .select('rate, miles, deadhead_miles')
+          .eq('driver_id', driverId)
+          .eq('status', 'Delivered')
+          .gte('created_at', since),
+        // Expenses for the same window. Currently expenses aren't tied to a
+        // driver, so we sum everything for the company — close enough for a
+        // solo owner-operator. (Filter by expense_date so the net matches the
+        // earnings window.)
+        supabase.from('expenses')
+          .select('amount')
+          .gte('expense_date', since.slice(0, 10)),
+      ])
+      if (loadsRes.error) throw loadsRes.error
+      if (expensesRes.error) throw expensesRes.error
+      const loads = (loadsRes.data ?? []) as Array<{ rate: number | null; miles: number | null; deadhead_miles: number | null }>
+      const exps  = (expensesRes.data ?? []) as Array<{ amount: number | null }>
+      const gross   = loads.reduce((s, r) => s + (r.rate ?? 0), 0)
+      const miles   = loads.reduce((s, r) => s + (r.miles ?? 0) + (r.deadhead_miles ?? 0), 0)
+      const expenses = exps.reduce((s, r) => s + (r.amount ?? 0), 0)
+      const net     = gross - expenses
+      return { gross, expenses, net, miles, loads: loads.length, rpm: miles > 0 ? gross / miles : 0 }
     },
   })
-  const r = data ?? { revenue: 0, miles: 0, loads: 0, rpm: 0 }
+  const r = data ?? { gross: 0, expenses: 0, net: 0, miles: 0, loads: 0, rpm: 0 }
+  const fmtK = (n: number) => '$' + n.toLocaleString(undefined, { maximumFractionDigits: 0 })
   return (
     <div className="bg-white rounded-2xl p-5">
       <div className="flex items-center justify-between mb-3">
@@ -67,18 +81,31 @@ function Summary({ driverId }: { driverId: string }) {
         </div>
         <span className="text-xs text-gray-400">{r.loads} delivered</span>
       </div>
-      <div className="grid grid-cols-3 gap-2">
+
+      <div className="grid grid-cols-2 gap-3 mb-3">
         <div>
-          <p className="text-[11px] text-gray-400">Revenue</p>
-          <p className="text-xl font-bold text-gray-900 mt-0.5">${r.revenue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</p>
+          <p className="text-[11px] text-gray-400">Gross</p>
+          <p className="text-2xl font-bold text-gray-900 mt-0.5">{fmtK(r.gross)}</p>
+        </div>
+        <div>
+          <p className="text-[11px] text-gray-400">Net (after expenses)</p>
+          <p className="text-2xl font-bold mt-0.5" style={{ color: r.net >= 0 ? '#16a34a' : '#dc2626' }}>
+            {fmtK(r.net)}
+          </p>
+        </div>
+      </div>
+      <div className="grid grid-cols-3 gap-2 pt-3 border-t border-gray-100">
+        <div>
+          <p className="text-[11px] text-gray-400">Expenses</p>
+          <p className="text-sm font-semibold text-gray-700 mt-0.5">{fmtK(r.expenses)}</p>
         </div>
         <div>
           <p className="text-[11px] text-gray-400">Miles</p>
-          <p className="text-xl font-bold text-gray-900 mt-0.5">{r.miles.toLocaleString()}</p>
+          <p className="text-sm font-semibold text-gray-700 mt-0.5">{r.miles.toLocaleString()}</p>
         </div>
         <div>
           <p className="text-[11px] text-gray-400">$/mile</p>
-          <p className="text-xl font-bold mt-0.5" style={{ color: '#c8410a' }}>
+          <p className="text-sm font-semibold mt-0.5" style={{ color: '#c8410a' }}>
             {r.miles > 0 ? '$' + r.rpm.toFixed(2) : '—'}
           </p>
         </div>

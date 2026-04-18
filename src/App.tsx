@@ -10,6 +10,8 @@ import { Drivers } from './pages/Drivers'
 import { Brokers } from './pages/Brokers'
 import { Customers } from './pages/Customers'
 import { Maintenance } from './pages/Maintenance'
+import { Trailers } from './pages/Trailers'
+import { Filings } from './pages/Filings'
 import { Compliance } from './pages/Compliance'
 import { Settings } from './pages/Settings'
 import { ProtectedRoute } from './components/ProtectedRoute'
@@ -31,6 +33,8 @@ function App() {
           <Route path="/brokers" element={<ProtectedRoute><Brokers /></ProtectedRoute>} />
           <Route path="/customers" element={<ProtectedRoute><Customers /></ProtectedRoute>} />
           <Route path="/maintenance" element={<ProtectedRoute><Maintenance /></ProtectedRoute>} />
+          <Route path="/trailers" element={<ProtectedRoute><Trailers /></ProtectedRoute>} />
+          <Route path="/filings" element={<ProtectedRoute><Filings /></ProtectedRoute>} />
           <Route path="/compliance" element={<ProtectedRoute><Compliance /></ProtectedRoute>} />
           <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />

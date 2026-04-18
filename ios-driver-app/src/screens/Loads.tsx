@@ -30,7 +30,10 @@ interface LoadDetail extends LoadCardLoad {
   pickup_notes: string | null
   delivery_rating: number | null
   delivery_notes: string | null
+  shipper_name: string | null
+  receiver_name: string | null
   brokers: { id: string; name: string; phone: string | null } | null
+  trailers: { id: string; trailer_number: string | null } | null
 }
 
 type LoadStatus = 'Pending' | 'Assigned' | 'In Transit' | 'Delivered'
@@ -82,7 +85,7 @@ export function Loads({ driver }: { driver: Driver }) {
     queryKey: ['my-loads', driver.id],
     queryFn: async () => {
       const { data, error } = await supabase.from('loads')
-        .select('id, load_number, origin_city, origin_state, dest_city, dest_state, rate, miles, status, eta, load_type, created_at, pickup_at, deliver_by, deadhead_miles, pickup_rating, pickup_notes, delivery_rating, delivery_notes, brokers(id, name, phone)')
+        .select('id, load_number, origin_city, origin_state, dest_city, dest_state, rate, miles, status, eta, load_type, created_at, pickup_at, deliver_by, deadhead_miles, pickup_rating, pickup_notes, delivery_rating, delivery_notes, shipper_name, receiver_name, brokers(id, name, phone), trailers(id, trailer_number)')
         .eq('driver_id', driver.id)
         .order('created_at', { ascending: false })
       if (error) throw error
@@ -173,6 +176,9 @@ function LoadSheet({ load, driverId, onClose }: { load: LoadDetail; driverId: st
           <Row k="Origin" v={origin || '—'} />
           <Row k="Destination" v={dest || '—'} />
           <Row k="Broker" v={load.brokers?.name ?? '—'} />
+          {load.shipper_name && <Row k="Shipper" v={load.shipper_name} />}
+          {load.receiver_name && <Row k="Receiver" v={load.receiver_name} />}
+          {load.trailers && <Row k="Trailer" v={load.trailers.trailer_number ?? '—'} />}
           <Row k="Type" v={load.load_type ?? '—'} />
           <Row k="Miles" v={load.miles != null ? load.miles.toLocaleString() : '—'} />
           {load.deadhead_miles != null && load.deadhead_miles > 0 && (
@@ -247,9 +253,10 @@ function NewLoadSheet({ driverId, onClose }: { driverId: string; onClose: () => 
     pickup_rating: 0,
     delivery_rating: 0,
     pickup_notes: '', delivery_notes: '',
+    shipper_name: '', receiver_name: '',
     eta: '',
     pickup_at: '', deliver_by: '',
-    broker_id: '', truck_id: '',
+    broker_id: '', truck_id: '', trailer_id: '',
   })
   const [error, setError] = useState<string | null>(null)
   const [quickBrokerOpen, setQuickBrokerOpen] = useState(false)
@@ -273,6 +280,14 @@ function NewLoadSheet({ driverId, onClose }: { driverId: string; onClose: () => 
       return (data ?? []) as Array<{ id: string; unit_number: string | null; make: string | null }>
     },
   })
+  const { data: trailers = [] } = useQuery({
+    queryKey: ['trailers-simple'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('trailers').select('id, trailer_number, license_plate').order('trailer_number')
+      if (error) throw error
+      return (data ?? []) as Array<{ id: string; trailer_number: string | null; license_plate: string | null }>
+    },
+  })
 
   const save = useMutation({
     mutationFn: async () => {
@@ -294,8 +309,11 @@ function NewLoadSheet({ driverId, onClose }: { driverId: string; onClose: () => 
         pickup_notes:    form.pickup_notes    || null,
         delivery_rating: form.delivery_rating > 0 ? form.delivery_rating : null,
         delivery_notes:  form.delivery_notes  || null,
+        shipper_name:  form.shipper_name || null,
+        receiver_name: form.receiver_name || null,
         broker_id:    form.broker_id || null,
         truck_id:     form.truck_id  || null,
+        trailer_id:   form.trailer_id || null,
         driver_id:    driverId,
       }
       const { error } = await supabase.from('loads').insert(payload)
@@ -460,6 +478,16 @@ function NewLoadSheet({ driverId, onClose }: { driverId: string; onClose: () => 
               </div>
             </div>
             <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Shipper company</label>
+              <input value={form.shipper_name} onChange={e => set('shipper_name', e.target.value)} placeholder="Walmart DC #4321"
+                className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-base" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Receiver company</label>
+              <input value={form.receiver_name} onChange={e => set('receiver_name', e.target.value)} placeholder="Target Regional"
+                className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-base" />
+            </div>
+            <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Pickup notes</label>
               <input value={form.pickup_notes} onChange={e => set('pickup_notes', e.target.value)} placeholder="Shipper notes"
                 className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-base" />
@@ -468,6 +496,19 @@ function NewLoadSheet({ driverId, onClose }: { driverId: string; onClose: () => 
               <label className="block text-xs font-medium text-gray-600 mb-1">Delivery notes</label>
               <input value={form.delivery_notes} onChange={e => set('delivery_notes', e.target.value)} placeholder="Receiver notes"
                 className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-base" />
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Trailer</label>
+              <select value={form.trailer_id} onChange={e => set('trailer_id', e.target.value)}
+                className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-base">
+                <option value="">— None —</option>
+                {trailers.map(t => (
+                  <option key={t.id} value={t.id}>
+                    {[t.trailer_number, t.license_plate].filter(Boolean).join(' — ') || t.id}
+                  </option>
+                ))}
+              </select>
             </div>
 
             <div>

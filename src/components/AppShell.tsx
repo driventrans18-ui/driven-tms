@@ -9,11 +9,13 @@ const navItems = [
   { label: 'Invoices', path: '/invoices' },
   { label: 'Expenses', path: '/expenses' },
   { label: 'Trucks', path: '/trucks' },
+  { label: 'Trailers', path: '/trailers' },
   { label: 'Drivers', path: '/drivers' },
   { label: 'Brokers', path: '/brokers' },
   { label: 'Customers', path: '/customers' },
   { label: 'Maintenance', path: '/maintenance' },
   { label: 'Compliance', path: '/compliance' },
+  { label: 'Filings', path: '/filings' },
 ]
 
 interface AppShellProps {

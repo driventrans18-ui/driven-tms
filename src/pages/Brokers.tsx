@@ -151,9 +151,11 @@ export function Brokers() {
   const { data: brokers = [], isLoading } = useQuery({
     queryKey: ['brokers'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('brokers').select('*').order('name')
+      const { data, error } = await supabase.from('brokers')
+        .select('*, loads(id)')
+        .order('name')
       if (error) throw error
-      return data as Broker[]
+      return data as Array<Broker & { loads: { id: string }[] }>
     },
   })
 
@@ -208,7 +210,7 @@ export function Brokers() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-100">
-                  {['Company', 'Contact', 'Phone', 'Email', 'MC Number'].map(h => (
+                  {['Company', 'Contact', 'Phone', 'Email', 'MC Number', 'Loads'].map(h => (
                     <th key={h} className="text-left px-4 py-3 text-xs font-medium text-gray-400 uppercase tracking-wide whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
@@ -222,6 +224,7 @@ export function Brokers() {
                     <td className="px-4 py-3 text-gray-600">{broker.phone ?? '—'}</td>
                     <td className="px-4 py-3 text-gray-600">{broker.email ?? '—'}</td>
                     <td className="px-4 py-3 text-gray-500 font-mono text-xs">{broker.mc_number ?? '—'}</td>
+                    <td className="px-4 py-3 text-gray-700 font-medium">{(broker as Broker & { loads?: unknown[] }).loads?.length ?? 0}</td>
                   </tr>
                 ))}
               </tbody>

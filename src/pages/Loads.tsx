@@ -27,13 +27,17 @@ interface Load {
   pickup_notes: string | null
   delivery_rating: number | null
   delivery_notes: string | null
+  shipper_name: string | null
+  receiver_name: string | null
   broker_id: string | null
   driver_id: string | null
   truck_id: string | null
+  trailer_id: string | null
   created_at: string
   brokers: { id: string; name: string } | null
   drivers: { id: string; first_name: string | null; last_name: string | null } | null
   trucks: { id: string; unit_number: string | null; make: string | null } | null
+  trailers: { id: string; trailer_number: string | null; license_plate: string | null } | null
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -136,6 +140,9 @@ function LoadModal({ onClose, editing }: { onClose: () => void; editing: Load | 
     broker_id:    editing?.broker_id    ?? '',
     driver_id:    editing?.driver_id    ?? '',
     truck_id:     editing?.truck_id     ?? '',
+    trailer_id:   editing?.trailer_id   ?? '',
+    shipper_name: editing?.shipper_name ?? '',
+    receiver_name: editing?.receiver_name ?? '',
   })
   const [error, setError] = useState<string | null>(null)
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }))
@@ -159,6 +166,13 @@ function LoadModal({ onClose, editing }: { onClose: () => void; editing: Load | 
     queryFn: async () => {
       const { data } = await supabase.from('trucks').select('id, unit_number, make').order('unit_number')
       return (data ?? []) as Array<{ id: string; unit_number: string | null; make: string | null }>
+    },
+  })
+  const { data: trailers = [] } = useQuery({
+    queryKey: ['trailers-simple'],
+    queryFn: async () => {
+      const { data } = await supabase.from('trailers').select('id, trailer_number, license_plate').order('trailer_number')
+      return (data ?? []) as Array<{ id: string; trailer_number: string | null; license_plate: string | null }>
     },
   })
 
@@ -185,6 +199,9 @@ function LoadModal({ onClose, editing }: { onClose: () => void; editing: Load | 
         broker_id:    form.broker_id || null,
         driver_id:    form.driver_id || null,
         truck_id:     form.truck_id  || null,
+        trailer_id:   form.trailer_id || null,
+        shipper_name: form.shipper_name || null,
+        receiver_name: form.receiver_name || null,
       }
       const { error } = editing
         ? await supabase.from('loads').update(payload).eq('id', editing.id)
@@ -302,8 +319,25 @@ function LoadModal({ onClose, editing }: { onClose: () => void; editing: Load | 
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
+            <Field label="Shipper name" value={form.shipper_name} onChange={v => set('shipper_name', v)} placeholder="Walmart DC #4321" />
+            <Field label="Receiver name" value={form.receiver_name} onChange={v => set('receiver_name', v)} placeholder="Target Regional" />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
             <Field label="Pickup notes" value={form.pickup_notes} onChange={v => set('pickup_notes', v)} placeholder="Shipper notes" />
             <Field label="Delivery notes" value={form.delivery_notes} onChange={v => set('delivery_notes', v)} placeholder="Receiver notes" />
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Trailer</label>
+            <select value={form.trailer_id} onChange={e => set('trailer_id', e.target.value)}
+              className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#c8410a]/20 focus:border-[#c8410a]">
+              <option value="">— None —</option>
+              {trailers.map(t => (
+                <option key={t.id} value={t.id}>
+                  {[t.trailer_number, t.license_plate].filter(Boolean).join(' — ') || t.id}
+                </option>
+              ))}
+            </select>
           </div>
 
           <Field label="ETA" value={form.eta} onChange={v => set('eta', v)} type="date" />
@@ -515,6 +549,9 @@ function DetailPanel({ load, onClose, onEdit, onDelete, deleting }: {
                 ['Broker',   load.brokers?.name],
                 ['Driver',   driverName(load.drivers)],
                 ['Truck',    load.trucks?.unit_number],
+                ['Trailer',  load.trailers?.trailer_number],
+                ['Shipper',  load.shipper_name],
+                ['Receiver', load.receiver_name],
                 ['ETA',      fmtDate(load.eta)],
                 ['Pickup',   fmtAppt(load.pickup_at)],
                 ['Delivery', fmtAppt(load.deliver_by)],
@@ -561,7 +598,7 @@ export function Loads() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('loads')
-        .select('*, brokers(id, name), drivers(id, first_name, last_name), trucks(id, unit_number, make)')
+        .select('*, brokers(id, name), drivers(id, first_name, last_name), trucks(id, unit_number, make), trailers(id, trailer_number, license_plate)')
         .order('created_at', { ascending: false })
       if (error) throw error
       return data as Load[]
