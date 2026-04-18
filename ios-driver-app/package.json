@@ -14,8 +14,11 @@
     "@capacitor/app": "^6.0.1",
     "@capacitor/camera": "^6.0.2",
     "@capacitor/core": "^6.1.2",
+    "@capacitor/filesystem": "^6.0.4",
     "@capacitor/geolocation": "^6.0.1",
+    "@capacitor/haptics": "^6.0.3",
     "@capacitor/ios": "^6.1.2",
+    "@capacitor/keyboard": "^6.0.4",
     "@capacitor/local-notifications": "^6.1.0",
     "@capacitor/push-notifications": "^6.0.2",
     "@capacitor/status-bar": "^6.0.1",
@@ -26,10 +29,10 @@
   },
   "devDependencies": {
     "@capacitor/cli": "^6.1.2",
+    "@tailwindcss/vite": "^4.2.2",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
-    "@tailwindcss/vite": "^4.2.2",
     "tailwindcss": "^4.2.2",
     "typescript": "~6.0.2",
     "vite": "^8.0.4"

@@ -1,10 +1,82 @@
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap');
-
 @import "tailwindcss";
 
-*, *::before, *::after {
-  box-sizing: border-box;
+@theme {
+  /* Brand */
+  --color-brand-500: #c8410a;
+  --color-brand-600: #a5340a;
+  --color-brand-100: #fbe9df;
+  --color-brand-ink: #ffffff;
+
+  /* Surfaces */
+  --color-surface-bg: #f8f7f4;
+  --color-surface-card: #ffffff;
+  --color-surface-elevated: #ffffff;
+  --color-surface-muted: #f3f2ee;
+
+  /* Borders */
+  --color-border-subtle: #ececea;
+  --color-border-strong: #d4d4d0;
+
+  /* Text */
+  --color-text-primary: #111418;
+  --color-text-secondary: #4b5058;
+  --color-text-tertiary: #8a8f98;
+  --color-text-on-brand: #ffffff;
+
+  /* Semantic */
+  --color-success-500: #15803d;
+  --color-success-100: #dcfce7;
+  --color-warning-500: #b45309;
+  --color-warning-100: #fef3c7;
+  --color-danger-500: #b91c1c;
+  --color-danger-100: #fee2e2;
+  --color-info-500: #1d4ed8;
+  --color-info-100: #dbeafe;
+
+  /* Dark nav (sidebar reserved for a later iteration; tokens ready) */
+  --color-nav-bg-start: #141830;
+  --color-nav-bg-end: #0a0d1c;
+  --color-nav-text: #cbd0da;
+  --color-nav-text-strong: #ffffff;
+  --color-nav-active: #3b82f6;
+
+  /* Radii */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
+
+  /* Shadows */
+  --shadow-1: 0 1px 2px rgba(17,20,24,0.04), 0 1px 3px rgba(17,20,24,0.06);
+  --shadow-2: 0 4px 12px rgba(17,20,24,0.08);
+  --shadow-3: 0 16px 40px rgba(17,20,24,0.16);
+
+  /* Motion */
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+
+  /* Font stack — SF Pro first (native on iOS), Inter as web fallback */
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro",
+    "Inter", "Inter Variable", system-ui, sans-serif;
 }
+
+:root[data-theme="dark"] {
+  --color-surface-bg: #0c0d10;
+  --color-surface-card: #16181c;
+  --color-surface-elevated: #1c1f24;
+  --color-surface-muted: #1c1f24;
+  --color-border-subtle: #262a31;
+  --color-border-strong: #2f333b;
+  --color-text-primary: #f3f4f6;
+  --color-text-secondary: #c7ccd4;
+  --color-text-tertiary: #8b909a;
+  --color-success-100: rgba(21, 128, 61, 0.18);
+  --color-warning-100: rgba(180, 83, 9, 0.20);
+  --color-danger-100: rgba(185, 28, 28, 0.22);
+  --color-info-100: rgba(29, 78, 216, 0.22);
+}
+
+*, *::before, *::after { box-sizing: border-box; }
 
 html, body, #root {
   margin: 0;
@@ -12,14 +84,26 @@ html, body, #root {
   height: 100%;
 }
 
+html { font-size: clamp(15px, 1rem, 18px); }
+
 body {
-  font-family: 'DM Sans', system-ui, sans-serif;
+  font-family: var(--font-sans);
+  font-feature-settings: "ss01", "cv11";
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background: #f8f7f4;
-  color: #111;
+  background: var(--color-surface-bg);
+  color: var(--color-text-primary);
 }
 
-#root {
-  min-height: 100vh;
+#root { min-height: 100vh; }
+
+button { font-family: inherit; }
+
+.tabular { font-variant-numeric: tabular-nums; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
 }

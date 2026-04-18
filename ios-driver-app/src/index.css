@@ -1,20 +1,117 @@
 @import "tailwindcss";
 
 @theme {
-  --color-accent: #c8410a;
-  --color-bg: #f2f2f7;
-  --font-sans: "DM Sans", system-ui, -apple-system, "Helvetica Neue", sans-serif;
+  /* Brand */
+  --color-brand-500: #c8410a;
+  --color-brand-600: #a5340a;
+  --color-brand-100: #fbe9df;
+  --color-brand-ink: #ffffff;
+
+  /* Surfaces */
+  --color-surface-bg: #f2f2f7;
+  --color-surface-card: #ffffff;
+  --color-surface-elevated: #ffffff;
+  --color-surface-muted: #eceef2;
+
+  /* Borders */
+  --color-border-subtle: #e5e7eb;
+  --color-border-strong: #d1d5db;
+
+  /* Text */
+  --color-text-primary: #111418;
+  --color-text-secondary: #4b5058;
+  --color-text-tertiary: #8a8f98;
+  --color-text-on-brand: #ffffff;
+
+  /* Semantic */
+  --color-success-500: #15803d;
+  --color-success-100: #dcfce7;
+  --color-warning-500: #b45309;
+  --color-warning-100: #fef3c7;
+  --color-danger-500: #b91c1c;
+  --color-danger-100: #fee2e2;
+  --color-info-500: #1d4ed8;
+  --color-info-100: #dbeafe;
+
+  /* Radii */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
+
+  /* Shadows */
+  --shadow-1: 0 1px 2px rgba(17,20,24,0.04), 0 1px 3px rgba(17,20,24,0.06);
+  --shadow-2: 0 4px 12px rgba(17,20,24,0.08);
+  --shadow-3: 0 16px 40px rgba(17,20,24,0.16);
+
+  /* Motion */
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+
+  /* Font stack — SF Pro first, resolves natively on iOS WKWebView */
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro",
+    "Inter", "Inter Variable", system-ui, "Helvetica Neue", sans-serif;
 }
+
+:root[data-theme="dark"] {
+  --color-surface-bg: #0c0d10;
+  --color-surface-card: #16181c;
+  --color-surface-elevated: #1c1f24;
+  --color-surface-muted: #1c1f24;
+  --color-border-subtle: #262a31;
+  --color-border-strong: #2f333b;
+  --color-text-primary: #f3f4f6;
+  --color-text-secondary: #c7ccd4;
+  --color-text-tertiary: #8b909a;
+  --color-success-100: rgba(21, 128, 61, 0.18);
+  --color-warning-100: rgba(180, 83, 9, 0.20);
+  --color-danger-100: rgba(185, 28, 28, 0.22);
+  --color-info-100: rgba(29, 78, 216, 0.22);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --color-surface-bg: #0c0d10;
+    --color-surface-card: #16181c;
+    --color-surface-elevated: #1c1f24;
+    --color-surface-muted: #1c1f24;
+    --color-border-subtle: #262a31;
+    --color-border-strong: #2f333b;
+    --color-text-primary: #f3f4f6;
+    --color-text-secondary: #c7ccd4;
+    --color-text-tertiary: #8b909a;
+  }
+}
+
+*, *::before, *::after { box-sizing: border-box; }
 
 html, body, #root {
   height: 100%;
   margin: 0;
   padding: 0;
-  background: #f2f2f7;
-  font-family: "DM Sans", system-ui, -apple-system, "Helvetica Neue", sans-serif;
+}
+
+html { font-size: clamp(15px, 1rem, 20px); }
+
+body {
+  font-family: var(--font-sans);
+  background: var(--color-surface-bg);
+  color: var(--color-text-primary);
   -webkit-font-smoothing: antialiased;
   -webkit-tap-highlight-color: transparent;
   overscroll-behavior-y: none;
 }
 
 button { font-family: inherit; }
+
+.tabular { font-variant-numeric: tabular-nums; }
+
+/* Keyboard avoidance: --kbd-height is set from @capacitor/keyboard events */
+.kbd-safe-bottom { padding-bottom: calc(env(safe-area-inset-bottom, 0px) + var(--kbd-height, 0px)); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}

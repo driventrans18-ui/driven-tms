@@ -72,6 +72,20 @@ Xcode will prompt to add these; paste the purpose strings so iOS approves the pr
 - `NSPhotoLibraryAddUsageDescription` — "Driven Driver saves captured delivery photos to the load record."
 - `NSLocationWhenInUseUsageDescription` — "Driven Driver records a check-in with your location when you tap Check In."
 
+### Expose BOL photos in the iPhone Files app
+
+When the driver taps "Capture POD", the photo is both uploaded to Supabase
+and mirrored into the app's Documents folder. Add these Boolean keys to
+Info.plist so the folder appears under "On My iPhone → Driven Driver" in
+the Files app:
+
+- `UIFileSharingEnabled` = `YES`
+- `LSSupportsOpeningDocumentsInPlace` = `YES`
+
+Captured files land at `Documents/BOLs/<load-number>/bol-<timestamp>.jpg`.
+Uploads from Files ("From Files" / "Upload BOL" buttons) accept any image
+or PDF picked by the iOS document picker.
+
 ## What's in the code
 
 - `src/lib/supabase.ts` — shared Supabase client
