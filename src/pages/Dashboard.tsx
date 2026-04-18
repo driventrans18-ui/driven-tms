@@ -3,42 +3,33 @@ import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { AppShell } from '../components/AppShell'
 import { listItems, severity, KIND_LABEL, daysLeft } from '../lib/compliance'
-
-// ── Stat queries ──────────────────────────────────────────────────────────────
+import { Skeleton } from '../components/ui'
 
 function useStats() {
   return useQuery({
     queryKey: ['dashboard-stats'],
     queryFn: async () => {
       const [activeLoads, openInvoices, trucks, drivers] = await Promise.all([
-        supabase
-          .from('loads')
-          .select('id', { count: 'exact', head: true })
+        supabase.from('loads').select('id', { count: 'exact', head: true })
           .in('status', ['Assigned', 'In Transit']),
-        supabase
-          .from('invoices')
-          .select('id', { count: 'exact', head: true })
+        supabase.from('invoices').select('id', { count: 'exact', head: true })
           .in('status', ['Sent', 'Overdue']),
-        supabase
-          .from('trucks')
-          .select('id', { count: 'exact', head: true }),
-        supabase
-          .from('drivers')
-          .select('id', { count: 'exact', head: true }),
+        supabase.from('trucks').select('id', { count: 'exact', head: true }),
+        supabase.from('drivers').select('id', { count: 'exact', head: true }),
       ])
       return {
-        activeLoads: activeLoads.count ?? 0,
+        activeLoads:  activeLoads.count  ?? 0,
         openInvoices: openInvoices.count ?? 0,
-        trucks: trucks.count ?? 0,
-        drivers: drivers.count ?? 0,
+        trucks:       trucks.count       ?? 0,
+        drivers:      drivers.count      ?? 0,
       }
     },
   })
 }
 
 function startOfWeek(d = new Date()) {
-  const day = d.getDay() // 0 = Sunday
-  const diff = (day === 0 ? -6 : 1 - day) // Monday as start of week
+  const day = d.getDay()
+  const diff = day === 0 ? -6 : 1 - day
   const monday = new Date(d)
   monday.setHours(0, 0, 0, 0)
   monday.setDate(d.getDate() + diff)
@@ -79,27 +70,42 @@ function ExpiringSoonBanner() {
   if (attention.length === 0) return null
   const expiredCount = attention.filter(i => severity(i.expires_at) === 'expired').length
   const preview = attention.slice(0, 3)
+  const hasExpired = expiredCount > 0
+  const surfaceClass = hasExpired
+    ? 'bg-danger-100 border-danger-500/30 hover:bg-danger-100/80'
+    : 'bg-warning-100 border-warning-500/30 hover:bg-warning-100/80'
   return (
-    <button onClick={() => navigate('/compliance')}
-      className={`w-full text-left mb-4 p-4 rounded-xl border cursor-pointer transition-colors ${
-        expiredCount > 0
-          ? 'bg-red-50 border-red-200 hover:bg-red-100'
-          : 'bg-orange-50 border-orange-200 hover:bg-orange-100'
-      }`}>
-      <div className="flex items-center justify-between">
+    <button
+      onClick={() => navigate('/compliance')}
+      className={`w-full text-left mb-4 p-4 rounded-lg border cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 ${surfaceClass}`}
+    >
+      <div className="flex items-center justify-between gap-3">
         <div>
-          <p className="text-sm font-semibold text-gray-900">
+          <p className="text-sm font-semibold text-text-primary">
             {attention.length} compliance item{attention.length === 1 ? '' : 's'} need attention
-            {expiredCount > 0 && <span className="text-red-700"> · {expiredCount} expired</span>}
+            {hasExpired && <span className="text-danger-500"> · {expiredCount} expired</span>}
           </p>
-          <p className="text-xs text-gray-600 mt-0.5">
+          <p className="text-xs text-text-secondary mt-0.5">
             {preview.map(i => `${KIND_LABEL[i.kind]} (${daysLeft(i.expires_at)}d)`).join(' · ')}
             {attention.length > 3 && ` · +${attention.length - 3} more`}
           </p>
         </div>
-        <span className="text-xs font-medium text-gray-500">View →</span>
+        <span className="text-xs font-medium text-text-tertiary shrink-0">View →</span>
       </div>
     </button>
+  )
+}
+
+function WeeklyMetric({ label, value, loading, emphasis }: {
+  label: string; value: string; loading: boolean; emphasis?: boolean
+}) {
+  return (
+    <div>
+      <p className="text-xs text-text-tertiary">{label}</p>
+      <p className={`text-2xl font-semibold mt-0.5 tabular ${emphasis ? 'text-brand-500' : 'text-text-primary'}`}>
+        {loading ? <Skeleton width={72} height={24} /> : value}
+      </p>
+    </div>
   )
 }
 
@@ -107,32 +113,19 @@ function WeeklySummary() {
   const { data, isLoading } = useWeekSummary()
   const r = data ?? { revenue: 0, miles: 0, rpm: 0, loads: 0 }
   return (
-    <div className="bg-white rounded-xl border border-gray-100 p-5 mb-6">
-      <div className="flex items-baseline justify-between mb-3">
-        <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">This week</h2>
-        <span className="text-xs text-gray-400">{r.loads} delivered</span>
-      </div>
+    <section className="bg-surface-card rounded-lg border border-border-subtle p-5 mb-6 shadow-1">
+      <header className="flex items-baseline justify-between mb-3">
+        <h2 className="text-xs font-semibold text-text-tertiary uppercase tracking-wide">This week</h2>
+        <span className="text-xs text-text-tertiary tabular">{r.loads} delivered</span>
+      </header>
       <div className="grid grid-cols-3 gap-4">
-        <div>
-          <p className="text-xs text-gray-400">Revenue</p>
-          <p className="text-2xl font-semibold text-gray-900 mt-0.5">{isLoading ? '—' : fmtMoney(r.revenue)}</p>
-        </div>
-        <div>
-          <p className="text-xs text-gray-400">Miles</p>
-          <p className="text-2xl font-semibold text-gray-900 mt-0.5">{isLoading ? '—' : r.miles.toLocaleString()}</p>
-        </div>
-        <div>
-          <p className="text-xs text-gray-400">$/mile</p>
-          <p className="text-2xl font-semibold mt-0.5" style={{ color: '#c8410a' }}>
-            {isLoading ? '—' : r.miles > 0 ? '$' + r.rpm.toFixed(2) : '—'}
-          </p>
-        </div>
+        <WeeklyMetric label="Revenue" value={fmtMoney(r.revenue)} loading={isLoading} />
+        <WeeklyMetric label="Miles"   value={r.miles.toLocaleString()} loading={isLoading} />
+        <WeeklyMetric label="$/mile"  value={r.miles > 0 ? '$' + r.rpm.toFixed(2) : '—'} loading={isLoading} emphasis />
       </div>
-    </div>
+    </section>
   )
 }
-
-// ── Stat card ─────────────────────────────────────────────────────────────────
 
 function StatCard({
   label, value, icon, onClick, loading,
@@ -146,57 +139,52 @@ function StatCard({
   return (
     <button
       onClick={onClick}
-      className="bg-white rounded-xl border border-gray-100 p-5 text-left w-full hover:border-gray-200 hover:shadow-sm transition-all cursor-pointer group"
+      className="bg-surface-card rounded-lg border border-border-subtle p-5 text-left w-full hover:border-border-strong hover:shadow-1 transition-all cursor-pointer group focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
     >
-      <div className="text-[#c8410a] mb-3 opacity-80">{icon}</div>
-      <div className="text-2xl font-semibold text-gray-900">
-        {loading ? <span className="text-gray-200 animate-pulse">—</span> : value}
+      <div className="text-brand-500 mb-3 opacity-80">{icon}</div>
+      <div className="text-2xl font-semibold text-text-primary tabular">
+        {loading ? <Skeleton width={40} height={26} /> : value}
       </div>
-      <div className="text-xs text-gray-400 mt-1 group-hover:text-gray-600 transition-colors">{label}</div>
+      <div className="text-xs text-text-tertiary mt-1 group-hover:text-text-secondary transition-colors">
+        {label}
+      </div>
     </button>
   )
 }
 
-// ── Icons ─────────────────────────────────────────────────────────────────────
-
 const TruckIcon = () => (
-  <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8">
+  <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8" aria-hidden>
     <rect x="1" y="3" width="15" height="13" rx="1" />
     <path d="M16 8h4l3 4v4h-7V8z" />
     <circle cx="5.5" cy="18.5" r="2.5" />
     <circle cx="18.5" cy="18.5" r="2.5" />
   </svg>
 )
-
 const PackageIcon = () => (
-  <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8">
+  <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8" aria-hidden>
     <path strokeLinecap="round" strokeLinejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10" />
   </svg>
 )
-
 const InvoiceIcon = () => (
-  <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8">
+  <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8" aria-hidden>
     <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
   </svg>
 )
-
 const DriverIcon = () => (
-  <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8">
+  <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8" aria-hidden>
     <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
   </svg>
 )
 
 const navModules = [
-  { label: 'Loads', path: '/loads', desc: 'Track & manage loads' },
-  { label: 'Invoices', path: '/invoices', desc: 'Billing & payments' },
-  { label: 'Expenses', path: '/expenses', desc: 'Costs & fuel' },
-  { label: 'Trucks', path: '/trucks', desc: 'Fleet management' },
-  { label: 'Drivers', path: '/drivers', desc: 'Driver records' },
-  { label: 'Brokers', path: '/brokers', desc: 'Broker contacts' },
+  { label: 'Loads',       path: '/loads',       desc: 'Track & manage loads' },
+  { label: 'Invoices',    path: '/invoices',    desc: 'Billing & payments' },
+  { label: 'Expenses',    path: '/expenses',    desc: 'Costs & fuel' },
+  { label: 'Trucks',      path: '/trucks',      desc: 'Fleet management' },
+  { label: 'Drivers',     path: '/drivers',     desc: 'Driver records' },
+  { label: 'Brokers',     path: '/brokers',     desc: 'Broker contacts' },
   { label: 'Maintenance', path: '/maintenance', desc: 'Service & repairs' },
 ]
-
-// ── Dashboard page ─────────────────────────────────────────────────────────────
 
 export function Dashboard() {
   const navigate = useNavigate()
@@ -204,65 +192,39 @@ export function Dashboard() {
 
   return (
     <AppShell>
-      <div className="mb-7">
-        <h1 className="text-xl font-semibold text-gray-900">Dashboard</h1>
-        <p className="text-sm text-gray-400 mt-0.5">Driven Transportation Inc. — Webster, NY</p>
-      </div>
+      <header className="mb-7">
+        <h1 className="text-xl font-semibold text-text-primary">Dashboard</h1>
+        <p className="text-sm text-text-tertiary mt-0.5">Driven Transportation Inc. — Webster, NY</p>
+      </header>
 
       <ExpiringSoonBanner />
 
       <WeeklySummary />
 
-      {/* Stat cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-        <StatCard
-          label="Active Loads"
-          value={stats?.activeLoads ?? 0}
-          icon={<PackageIcon />}
-          loading={isLoading}
-          onClick={() => navigate('/loads')}
-        />
-        <StatCard
-          label="Open Invoices"
-          value={stats?.openInvoices ?? 0}
-          icon={<InvoiceIcon />}
-          loading={isLoading}
-          onClick={() => navigate('/invoices')}
-        />
-        <StatCard
-          label="Trucks"
-          value={stats?.trucks ?? 0}
-          icon={<TruckIcon />}
-          loading={isLoading}
-          onClick={() => navigate('/trucks')}
-        />
-        <StatCard
-          label="Drivers"
-          value={stats?.drivers ?? 0}
-          icon={<DriverIcon />}
-          loading={isLoading}
-          onClick={() => navigate('/drivers')}
-        />
-      </div>
+      <section className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8" aria-label="Key metrics">
+        <StatCard label="Active Loads"  value={stats?.activeLoads  ?? 0} icon={<PackageIcon />} loading={isLoading} onClick={() => navigate('/loads')} />
+        <StatCard label="Open Invoices" value={stats?.openInvoices ?? 0} icon={<InvoiceIcon />} loading={isLoading} onClick={() => navigate('/invoices')} />
+        <StatCard label="Trucks"        value={stats?.trucks       ?? 0} icon={<TruckIcon />}   loading={isLoading} onClick={() => navigate('/trucks')} />
+        <StatCard label="Drivers"       value={stats?.drivers      ?? 0} icon={<DriverIcon />}  loading={isLoading} onClick={() => navigate('/drivers')} />
+      </section>
 
-      {/* Module grid */}
-      <div>
-        <h2 className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-3">Modules</h2>
+      <section>
+        <h2 className="text-xs font-medium text-text-tertiary uppercase tracking-wider mb-3">Modules</h2>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {navModules.map(item => (
             <button
               key={item.label}
               onClick={() => navigate(item.path)}
-              className="bg-white rounded-xl border border-gray-100 p-4 text-left hover:border-[#c8410a]/25 hover:shadow-sm transition-all cursor-pointer group"
+              className="bg-surface-card rounded-lg border border-border-subtle p-4 text-left hover:border-brand-500/30 hover:shadow-1 transition-all cursor-pointer group focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
             >
-              <div className="text-sm font-medium text-gray-700 group-hover:text-[#c8410a] transition-colors">
+              <div className="text-sm font-medium text-text-secondary group-hover:text-brand-500 transition-colors">
                 {item.label}
               </div>
-              <div className="text-xs text-gray-400 mt-0.5">{item.desc}</div>
+              <div className="text-xs text-text-tertiary mt-0.5">{item.desc}</div>
             </button>
           ))}
         </div>
-      </div>
+      </section>
     </AppShell>
   )
 }
