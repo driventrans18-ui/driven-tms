@@ -10,6 +10,7 @@ import { isDocScanAvailable, scanDocument } from '../lib/docScan'
 import { captureStampedPhoto } from '../lib/stampedCamera'
 import { uploadBol } from '../lib/bolDocuments'
 import { estimateMiles } from '../lib/estimateMiles'
+import { parseRateCon, type RateConPrefill } from '../lib/ai'
 import type { Driver } from '../hooks/useDriver'
 
 type DocKind = 'rate_con' | 'pod' | 'freight' | 'other'
@@ -324,12 +325,85 @@ function LoadFormSheet({ driverId, editing, onClose }: {
   const set = <K extends keyof typeof form>(k: K, v: typeof form[K]) =>
     setForm(f => ({ ...f, [k]: v }))
 
+  // Rate-con scan-to-prefill state. `scanning` gates the button; `scanBanner`
+  // is the summary shown once Claude returns ("Auto-filled 11 of 15 fields")
+  // so the driver knows to double-check the form before saving.
+  const [scanning, setScanning] = useState(false)
+  const [scanBanner, setScanBanner] = useState<string | null>(null)
+
+  // Merge a RateConPrefill into the form, skipping nulls so Claude's "I don't
+  // know" answers don't clobber whatever the user already typed. Returns the
+  // count of fields it actually populated so the banner can show it.
+  function applyPrefill(prefill: RateConPrefill): number {
+    let filled = 0
+    setForm(f => {
+      const next = { ...f }
+      const put = <K extends keyof typeof f>(key: K, value: (typeof f)[K] | null | undefined) => {
+        if (value == null || value === '') return
+        if ((next[key] as unknown) === value) return
+        next[key] = value as (typeof f)[K]
+        filled++
+      }
+      put('load_number',    prefill.load_number ?? '')
+      put('origin_city',    prefill.origin_city ?? '')
+      put('origin_state',   prefill.origin_state?.toUpperCase() ?? '')
+      put('dest_city',      prefill.dest_city ?? '')
+      put('dest_state',     prefill.dest_state?.toUpperCase() ?? '')
+      put('shipper_name',   prefill.shipper_name ?? '')
+      put('receiver_name',  prefill.receiver_name ?? '')
+      put('pickup_notes',   prefill.pickup_notes ?? '')
+      put('delivery_notes', prefill.delivery_notes ?? '')
+      put('pickup_at',      prefill.pickup_at ?? '')   // ISO w/o tz matches datetime-local
+      put('deliver_by',     prefill.deliver_by ?? '')
+      if (LOAD_TYPES.includes(prefill.load_type as typeof LOAD_TYPES[number])) {
+        put('load_type', prefill.load_type as typeof LOAD_TYPES[number])
+      }
+      if (prefill.miles != null) put('miles', String(prefill.miles))
+      if (prefill.rate  != null) put('rate',  String(prefill.rate))
+
+      // Broker auto-match by MC# first, then by name substring. If we find
+      // one, select it; otherwise leave unset so the driver can + New broker…
+      if (prefill.broker_mc) {
+        const target = prefill.broker_mc.replace(/\D/g, '')
+        const byMc = brokers.find(b => b.mc_number?.replace(/\D/g, '') === target)
+        if (byMc) put('broker_id', byMc.id)
+      }
+      if (!next.broker_id && prefill.broker_name) {
+        const needle = prefill.broker_name.toLowerCase()
+        const byName = brokers.find(b => b.name.toLowerCase().includes(needle) || needle.includes(b.name.toLowerCase()))
+        if (byName) put('broker_id', byName.id)
+      }
+      return next
+    })
+    return filled
+  }
+
+  async function scanToPrefill() {
+    if (scanning) return
+    setScanning(true); setError(null); setScanBanner(null)
+    try {
+      const images = await scanDocument()
+      if (images.length === 0) return
+      const { prefill, usage } = await parseRateCon(images)
+      const filled = applyPrefill(prefill)
+      const cached = usage.cache_read > 0 ? ' (cached)' : ''
+      setScanBanner(filled > 0
+        ? `Auto-filled ${filled} field${filled === 1 ? '' : 's'} from rate con${cached}. Review before saving.`
+        : `Couldn't extract any fields from that scan${cached}. Enter manually.`)
+    } catch (e) {
+      const msg = (e as Error).message
+      if (!/cancel/i.test(msg)) setError(`Scan failed: ${msg}`)
+    } finally {
+      setScanning(false)
+    }
+  }
+
   const { data: brokers = [] } = useQuery({
     queryKey: ['brokers-simple'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('brokers').select('id, name').order('name')
+      const { data, error } = await supabase.from('brokers').select('id, name, mc_number').order('name')
       if (error) throw error
-      return (data ?? []) as Array<{ id: string; name: string }>
+      return (data ?? []) as Array<{ id: string; name: string; mc_number: string | null }>
     },
   })
   const { data: trucks = [] } = useQuery({
@@ -403,6 +477,32 @@ function LoadFormSheet({ driverId, editing, onClose }: {
             <h2 className="text-lg font-bold text-gray-900">{isEdit ? 'Edit Load' : 'New Load'}</h2>
             <button onClick={onClose} className="text-gray-400 text-lg cursor-pointer">✕</button>
           </div>
+
+          {/* Scan rate con → auto-fill. Only offered on create (editing an
+              existing load probably already has the fields) and only on
+              platforms with the native doc scanner. */}
+          {!isEdit && isDocScanAvailable() && (
+            <div className="mb-4">
+              <button
+                type="button"
+                onClick={scanToPrefill}
+                disabled={scanning}
+                className="w-full py-3 rounded-xl text-white text-base font-semibold disabled:opacity-60 cursor-pointer flex items-center justify-center gap-2"
+                style={{ background: 'var(--color-brand-500)' }}
+              >
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <path d="M3 7V5a2 2 0 012-2h2M17 3h2a2 2 0 012 2v2M21 17v2a2 2 0 01-2 2h-2M7 21H5a2 2 0 01-2-2v-2" />
+                  <path d="M7 12h10" />
+                </svg>
+                {scanning ? 'Reading rate con…' : 'Scan rate con to auto-fill'}
+              </button>
+              {scanBanner && (
+                <p className="mt-2 text-xs px-1" style={{ color: 'var(--color-brand-600)' }}>
+                  {scanBanner}
+                </p>
+              )}
+            </div>
+          )}
 
           <div className="space-y-4">
             <div>
