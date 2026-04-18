@@ -691,7 +691,7 @@ interface OpenDoc {
 function LoadDocs({ load }: { load: LoadDetail }) {
   const qc = useQueryClient()
   const [error, setError] = useState<string | null>(null)
-  const [busy, setBusy] = useState<DocKind | 'email' | 'scan' | 'files' | null>(null)
+  const [busy, setBusy] = useState<DocKind | 'email' | 'files' | null>(null)
   const [viewing, setViewing] = useState<OpenDoc | null>(null)
   const [pickKind, setPickKind] = useState<DocKind>('pod')
   const loadRef = load.load_number || load.id.slice(0, 8)
@@ -719,6 +719,24 @@ function LoadDocs({ load }: { load: LoadDetail }) {
   const uploadPhoto = async (kind: DocKind) => {
     setBusy(kind); setError(null)
     try {
+      // Prefer the native iOS document scanner (VNDocumentCameraViewController)
+      // — auto edge detection, multi-page, perspective correction, the same
+      // experience as the Notes app. Falls back to the plain camera on
+      // devices or kinds where the scanner isn't the right tool.
+      if (isDocScanAvailable() && kind !== 'freight') {
+        const images = await scanDocument()
+        if (images.length === 0) { setBusy(null); return }
+        for (const base64 of images) {
+          const fileName = `${kind}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}.jpg`
+          const bytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0))
+          const blob = new Blob([bytes], { type: 'image/jpeg' })
+          await uploadBol({ loadId: load.id, loadRef, blob, filename: fileName, mimeType: 'image/jpeg', kind })
+        }
+        qc.invalidateQueries({ queryKey: ['load-documents', load.id] })
+        return
+      }
+
+      // Non-iOS / unsupported: fall back to the single-shot camera.
       const { Camera, CameraResultType, CameraSource } = await import('@capacitor/camera')
       const photo = await Camera.getPhoto({
         resultType: CameraResultType.Base64,
@@ -734,7 +752,8 @@ function LoadDocs({ load }: { load: LoadDetail }) {
       await uploadBol({ loadId: load.id, loadRef, blob, filename: fileName, mimeType: mime, kind })
       qc.invalidateQueries({ queryKey: ['load-documents', load.id] })
     } catch (e) {
-      setError((e as Error).message)
+      const msg = (e as Error).message
+      if (msg !== 'User cancelled') setError(msg)
     } finally {
       setBusy(null)
     }
@@ -795,35 +814,6 @@ function LoadDocs({ load }: { load: LoadDetail }) {
     }
   }
 
-  // Upload scanned pages (from native iOS document scanner) as a Rate Con.
-  // Each page becomes its own load_documents row so the user can email them
-  // or review individually.
-  const scanRateCon = async () => {
-    setBusy('scan'); setError(null)
-    try {
-      const images = await scanDocument()
-      if (images.length === 0) { setBusy(null); return }
-      for (const base64 of images) {
-        const fileName = `rate_con-${Date.now()}-${Math.random().toString(36).slice(2, 6)}.jpg`
-        const bytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0))
-        const blob = new Blob([bytes], { type: 'image/jpeg' })
-        await uploadBol({
-          loadId: load.id,
-          loadRef,
-          blob,
-          filename: fileName,
-          mimeType: 'image/jpeg',
-          kind: 'rate_con',
-        })
-      }
-      qc.invalidateQueries({ queryKey: ['load-documents', load.id] })
-    } catch (e) {
-      const msg = (e as Error).message
-      if (msg !== 'User cancelled') setError(msg)
-    } finally {
-      setBusy(null)
-    }
-  }
 
   const deleteDoc = async (doc: LoadDocument) => {
     if (!confirm(`Delete ${doc.file_name}?`)) return
@@ -876,26 +866,24 @@ function LoadDocs({ load }: { load: LoadDetail }) {
     }
   }
 
+  const scanHint = isDocScanAvailable()
+    ? 'Tap any + button below — the iOS scanner auto-detects edges, handles multi-page, and corrects perspective.'
+    : null
+
   return (
     <div className="mt-5">
       <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Documents</p>
-      {isDocScanAvailable() && (
-        <button onClick={scanRateCon} disabled={busy !== null}
-          className="w-full mb-2 py-2.5 rounded-lg text-sm font-semibold text-white disabled:opacity-50 cursor-pointer"
-          style={{ background: 'var(--color-brand-500)' }}>
-          {busy === 'scan' ? 'Uploading scan…' : 'Scan Rate Con (multi-page)'}
-        </button>
-      )}
       <button onClick={captureFreight} disabled={busy !== null}
         className="w-full mb-2 py-2.5 rounded-lg text-sm font-semibold text-white disabled:opacity-50 cursor-pointer"
-        style={{ background: '#0a7fc8' }}>
+        style={{ background: 'var(--color-brand-500)' }}>
         {busy === 'freight' ? 'Uploading freight photo…' : '📸 Freight photo (time-stamped)'}
       </button>
       <div className="grid grid-cols-3 gap-2 mb-2">
-        <DocButton label="+ Rate Con" busy={busy === 'rate_con'} disabled={busy !== null} onClick={() => uploadPhoto('rate_con')} />
-        <DocButton label="+ POD"      busy={busy === 'pod'}      disabled={busy !== null} onClick={() => uploadPhoto('pod')} />
-        <DocButton label="+ Other"    busy={busy === 'other'}    disabled={busy !== null} onClick={() => uploadPhoto('other')} />
+        <DocButton label="Scan Rate Con" busy={busy === 'rate_con'} disabled={busy !== null} onClick={() => uploadPhoto('rate_con')} />
+        <DocButton label="Scan POD"      busy={busy === 'pod'}      disabled={busy !== null} onClick={() => uploadPhoto('pod')} />
+        <DocButton label="Scan Other"    busy={busy === 'other'}    disabled={busy !== null} onClick={() => uploadPhoto('other')} />
       </div>
+      {scanHint && <p className="text-[11px] text-gray-500 mb-3 px-1">{scanHint}</p>}
 
       {/* Upload an existing file (PDF, image, etc.) from Files / iCloud Drive
           and tag it as Rate Con, POD, Freight, or Other. */}
