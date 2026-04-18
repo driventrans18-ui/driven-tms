@@ -1,4 +1,5 @@
 import { Capacitor } from '@capacitor/core'
+import { reverseGeocode } from './citySearch'
 
 // Capture a photo via the system camera and burn a timestamp + GPS banner
 // onto it. The result is a base64 JPEG ready for upload. Used for freight
@@ -38,14 +39,29 @@ export async function captureStampedPhoto(): Promise<StampedPhoto | null> {
   })
   if (!photo.dataUrl) return null
 
-  const stamped = await drawStamp(photo.dataUrl, coords)
+  // Try to resolve the coordinates to a city label ("City, ST") so the stamp
+  // reads naturally. Best-effort: falls back to raw coords if the lookup
+  // fails or times out.
+  let place: string | null = null
+  if (coords) {
+    place = await Promise.race([
+      reverseGeocode(coords.lat, coords.lng),
+      new Promise<null>(resolve => setTimeout(() => resolve(null), 4000)),
+    ])
+  }
+
+  const stamped = await drawStamp(photo.dataUrl, coords, place)
   const base64 = stamped.split(',')[1] ?? ''
   // Blob size approximation from base64 length (every 4 chars = 3 bytes).
   const bytes = Math.floor(base64.length * 3 / 4)
   return { base64, mimeType: 'image/jpeg', bytes }
 }
 
-function formatStamp(now: Date, coords: { lat: number; lng: number } | null): string[] {
+function formatStamp(
+  now: Date,
+  coords: { lat: number; lng: number } | null,
+  place: string | null,
+): string[] {
   const date = now.toLocaleString('en-US', {
     month: 'short',
     day: 'numeric',
@@ -56,13 +72,19 @@ function formatStamp(now: Date, coords: { lat: number; lng: number } | null): st
     timeZoneName: 'short',
   })
   const lines = [date]
-  if (coords) {
+  if (place) {
+    lines.push(place)
+  } else if (coords) {
     lines.push(`${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)}`)
   }
   return lines
 }
 
-async function drawStamp(dataUrl: string, coords: { lat: number; lng: number } | null): Promise<string> {
+async function drawStamp(
+  dataUrl: string,
+  coords: { lat: number; lng: number } | null,
+  place: string | null,
+): Promise<string> {
   const img = await loadImage(dataUrl)
   const canvas = document.createElement('canvas')
   canvas.width = img.naturalWidth
@@ -71,7 +93,7 @@ async function drawStamp(dataUrl: string, coords: { lat: number; lng: number } |
   if (!ctx) return dataUrl
   ctx.drawImage(img, 0, 0)
 
-  const lines = formatStamp(new Date(), coords)
+  const lines = formatStamp(new Date(), coords, place)
   // Scale font relative to image width so the overlay reads the same across
   // different phone resolutions.
   const fontPx = Math.max(20, Math.round(canvas.width / 40))

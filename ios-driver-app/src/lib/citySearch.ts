@@ -69,6 +69,40 @@ export async function searchCities(query: string): Promise<CitySuggestion[]> {
   }
 }
 
+// Reverse-geocode a lat/lng to a "City, ST" label. Best-effort: returns null
+// if the network call fails or the response doesn't resolve to a US locality,
+// so callers can fall back to showing raw coordinates.
+export async function reverseGeocode(lat: number, lng: number): Promise<string | null> {
+  const url = new URL('https://nominatim.openstreetmap.org/reverse')
+  url.searchParams.set('format', 'json')
+  url.searchParams.set('addressdetails', '1')
+  url.searchParams.set('lat', lat.toString())
+  url.searchParams.set('lon', lng.toString())
+  url.searchParams.set('zoom', '14')
+  try {
+    const res = await fetch(url.toString(), {
+      headers: { 'Accept': 'application/json', 'Referer': 'https://driven-tms.vercel.app' },
+    })
+    if (!res.ok) return null
+    const row = await res.json() as {
+      address?: {
+        city?: string; town?: string; village?: string; hamlet?: string;
+        suburb?: string; county?: string; state?: string; country_code?: string
+      }
+    }
+    const a = row.address ?? {}
+    const city = a.city ?? a.town ?? a.village ?? a.hamlet ?? a.suburb ?? a.county
+    if (!city) return null
+    if (!a.state) return city
+    const stateCode = a.country_code === 'us'
+      ? (US_STATE_ABBR[a.state.toLowerCase()] ?? a.state)
+      : a.state
+    return `${city}, ${stateCode}`
+  } catch {
+    return null
+  }
+}
+
 // Simple debounce helper for use inside React components.
 export function useDebounced<T extends (...a: never[]) => unknown>(fn: T, ms = 300): T {
   let timer: ReturnType<typeof setTimeout> | null = null

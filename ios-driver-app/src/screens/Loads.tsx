@@ -6,6 +6,7 @@ import { DocViewer } from '../components/DocViewer'
 import { CityAutocomplete } from '../components/CityAutocomplete'
 import { isDocScanAvailable, scanDocument } from '../lib/docScan'
 import { captureStampedPhoto } from '../lib/stampedCamera'
+import { uploadBol } from '../lib/bolDocuments'
 import { estimateMiles } from '../lib/estimateMiles'
 import type { Driver } from '../hooks/useDriver'
 
@@ -628,8 +629,10 @@ interface OpenDoc {
 function LoadDocs({ load }: { load: LoadDetail }) {
   const qc = useQueryClient()
   const [error, setError] = useState<string | null>(null)
-  const [busy, setBusy] = useState<DocKind | 'email' | 'scan' | null>(null)
+  const [busy, setBusy] = useState<DocKind | 'email' | 'scan' | 'files' | null>(null)
   const [viewing, setViewing] = useState<OpenDoc | null>(null)
+  const [pickKind, setPickKind] = useState<DocKind>('pod')
+  const loadRef = load.load_number || load.id.slice(0, 8)
 
   const { data: docs = [] } = useQuery({
     queryKey: ['load-documents', load.id],
@@ -662,23 +665,33 @@ function LoadDocs({ load }: { load: LoadDetail }) {
       })
       if (!photo.base64String) throw new Error('No photo captured')
       const format = photo.format ?? 'jpg'
+      const mime = `image/${format === 'jpg' ? 'jpeg' : format}`
       const fileName = `${kind}-${Date.now()}.${format}`
-      const path = `${load.id}/${crypto.randomUUID()}-${fileName}`
       const bytes = Uint8Array.from(atob(photo.base64String), c => c.charCodeAt(0))
-      const blob = new Blob([bytes], { type: `image/${format}` })
-      const { error: upErr } = await supabase.storage.from(DOC_BUCKET).upload(path, blob, {
-        contentType: `image/${format}`,
-      })
-      if (upErr) throw upErr
-      const { error: dbErr } = await supabase.from('load_documents').insert({
-        load_id: load.id,
+      const blob = new Blob([bytes], { type: mime })
+      await uploadBol({ loadId: load.id, loadRef, blob, filename: fileName, mimeType: mime, kind })
+      qc.invalidateQueries({ queryKey: ['load-documents', load.id] })
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  // Pick an existing file from the iPhone Files app (including iCloud Drive)
+  // and upload it as the currently-selected doc kind. Mirrors a copy back to
+  // the app's Documents folder so it stays browsable offline.
+  const uploadFromFiles = async (file: File, kind: DocKind) => {
+    setBusy('files'); setError(null)
+    try {
+      await uploadBol({
+        loadId: load.id,
+        loadRef,
+        blob:     file,
+        filename: file.name,
+        mimeType: file.type || 'application/octet-stream',
         kind,
-        storage_path: path,
-        file_name: fileName,
-        mime_type: `image/${format}`,
-        file_size: blob.size,
       })
-      if (dbErr) throw dbErr
       qc.invalidateQueries({ queryKey: ['load-documents', load.id] })
     } catch (e) {
       setError((e as Error).message)
@@ -701,22 +714,16 @@ function LoadDocs({ load }: { load: LoadDetail }) {
       const stamped = await captureStampedPhoto()
       if (!stamped) { setBusy(null); return }
       const fileName = `freight-${Date.now()}.jpg`
-      const path = `${load.id}/${crypto.randomUUID()}-${fileName}`
       const bytes = Uint8Array.from(atob(stamped.base64), c => c.charCodeAt(0))
       const blob = new Blob([bytes], { type: 'image/jpeg' })
-      const { error: upErr } = await supabase.storage.from(DOC_BUCKET).upload(path, blob, {
-        contentType: 'image/jpeg',
-      })
-      if (upErr) throw upErr
-      const { error: dbErr } = await supabase.from('load_documents').insert({
-        load_id: load.id,
+      await uploadBol({
+        loadId: load.id,
+        loadRef,
+        blob,
+        filename: fileName,
+        mimeType: 'image/jpeg',
         kind: 'freight',
-        storage_path: path,
-        file_name: fileName,
-        mime_type: 'image/jpeg',
-        file_size: blob.size,
       })
-      if (dbErr) throw dbErr
       qc.invalidateQueries({ queryKey: ['load-documents', load.id] })
     } catch (e) {
       const msg = (e as Error).message
@@ -736,22 +743,16 @@ function LoadDocs({ load }: { load: LoadDetail }) {
       if (images.length === 0) { setBusy(null); return }
       for (const base64 of images) {
         const fileName = `rate_con-${Date.now()}-${Math.random().toString(36).slice(2, 6)}.jpg`
-        const path = `${load.id}/${crypto.randomUUID()}-${fileName}`
         const bytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0))
         const blob = new Blob([bytes], { type: 'image/jpeg' })
-        const { error: upErr } = await supabase.storage.from(DOC_BUCKET).upload(path, blob, {
-          contentType: 'image/jpeg',
-        })
-        if (upErr) throw upErr
-        const { error: dbErr } = await supabase.from('load_documents').insert({
-          load_id: load.id,
+        await uploadBol({
+          loadId: load.id,
+          loadRef,
+          blob,
+          filename: fileName,
+          mimeType: 'image/jpeg',
           kind: 'rate_con',
-          storage_path: path,
-          file_name: fileName,
-          mime_type: 'image/jpeg',
-          file_size: blob.size,
         })
-        if (dbErr) throw dbErr
       }
       qc.invalidateQueries({ queryKey: ['load-documents', load.id] })
     } catch (e) {
@@ -828,10 +829,48 @@ function LoadDocs({ load }: { load: LoadDetail }) {
         style={{ background: '#0a7fc8' }}>
         {busy === 'freight' ? 'Uploading freight photo…' : '📸 Freight photo (time-stamped)'}
       </button>
-      <div className="grid grid-cols-3 gap-2 mb-3">
+      <div className="grid grid-cols-3 gap-2 mb-2">
         <DocButton label="+ Rate Con" busy={busy === 'rate_con'} disabled={busy !== null} onClick={() => uploadPhoto('rate_con')} />
         <DocButton label="+ POD"      busy={busy === 'pod'}      disabled={busy !== null} onClick={() => uploadPhoto('pod')} />
         <DocButton label="+ Other"    busy={busy === 'other'}    disabled={busy !== null} onClick={() => uploadPhoto('other')} />
+      </div>
+
+      {/* Upload an existing file (PDF, image, etc.) from Files / iCloud Drive
+          and tag it as Rate Con, POD, Freight, or Other. */}
+      <div className="mb-3 bg-gray-50 border border-gray-200 rounded-xl p-2">
+        <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Upload from Files</p>
+        <div className="grid grid-cols-4 gap-1 bg-white rounded-lg p-0.5 mb-2">
+          {(['rate_con', 'pod', 'freight', 'other'] as DocKind[]).map(k => {
+            const on = pickKind === k
+            const label = k === 'rate_con' ? 'Rate' : k === 'pod' ? 'POD' : k === 'freight' ? 'Freight' : 'Other'
+            return (
+              <button key={k} onClick={() => setPickKind(k)}
+                className="py-1.5 rounded-md text-[11px] font-semibold cursor-pointer"
+                style={on ? { background: '#c8410a', color: 'white' } : { color: '#6b7280' }}>
+                {label}
+              </button>
+            )
+          })}
+        </div>
+        <label
+          htmlFor={`load-${load.id}-files-picker`}
+          aria-disabled={busy !== null || undefined}
+          className={`block w-full py-2.5 rounded-lg border border-dashed border-gray-300 text-center text-sm font-semibold text-gray-700 bg-white active:bg-gray-100 cursor-pointer ${busy !== null ? 'opacity-40 pointer-events-none' : ''}`}
+        >
+          {busy === 'files' ? 'Uploading…' : 'Choose file from Files'}
+        </label>
+        <input
+          id={`load-${load.id}-files-picker`}
+          type="file"
+          accept="image/*,application/pdf"
+          className="hidden"
+          disabled={busy !== null}
+          onChange={e => {
+            const f = e.target.files?.[0]
+            e.target.value = ''
+            if (f) uploadFromFiles(f, pickKind)
+          }}
+        />
       </div>
 
       {docs.length > 0 ? (
