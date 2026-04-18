@@ -126,10 +126,10 @@ export function LoadCalendar({ driverId }: { driverId: string }) {
               aria-label={`${d.toDateString()}${dayLoads.length ? `, ${dayLoads.length} load${dayLoads.length === 1 ? '' : 's'}` : ''}`}
               aria-pressed={isSel}
               className={`aspect-square rounded-lg flex flex-col items-center justify-center text-sm cursor-pointer ${
-                isSel ? 'ring-2 ring-[#c8410a]' : ''
+                isSel ? 'ring-2 ring-[var(--color-brand-500)]' : ''
               }`}
               style={{
-                color: inMonth ? (isToday ? '#c8410a' : '#111827') : '#d1d5db',
+                color: inMonth ? (isToday ? 'var(--color-brand-500)' : '#111827') : '#d1d5db',
                 fontWeight: isToday ? 700 : 500,
                 background: isSel ? 'rgba(200,65,10,0.06)' : 'transparent',
               }}
@@ -154,7 +154,7 @@ export function LoadCalendar({ driverId }: { driverId: string }) {
             </p>
             <button
               onClick={() => setAdding(true)}
-              className="text-xs font-semibold text-[#c8410a] active:opacity-70 cursor-pointer"
+              className="text-xs font-semibold text-[var(--color-brand-500)] active:opacity-70 cursor-pointer"
             >
               + Add load
             </button>
@@ -376,7 +376,7 @@ function AddLoadForDateSheet({
                     type="button"
                     onClick={() => set('status', s)}
                     className="py-2 rounded-lg text-xs font-medium cursor-pointer"
-                    style={on ? { background: '#c8410a', color: 'white' } : { color: '#6b7280' }}
+                    style={on ? { background: 'var(--color-brand-500)', color: 'white' } : { color: '#6b7280' }}
                   >
                     {s}
                   </button>
@@ -406,7 +406,7 @@ function AddLoadForDateSheet({
           onClick={() => save.mutate()}
           disabled={!canSubmit}
           className="w-full mt-5 py-3.5 rounded-xl text-white text-base font-semibold disabled:opacity-50 cursor-pointer"
-          style={{ background: '#c8410a' }}
+          style={{ background: 'var(--color-brand-500)' }}
         >
           {save.isPending ? 'Saving…' : 'Save Load'}
         </button>

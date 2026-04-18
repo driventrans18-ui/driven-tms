@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Capacitor } from '@capacitor/core'
 import { supabase } from '../lib/supabase'
-import { ScreenHeader } from '../components/ScreenHeader'
+import { ScreenHeader, IconButton } from '../components/ScreenHeader'
 import type { Driver } from '../hooks/useDriver'
 
 const PHOTO_BUCKET = 'driver-photos'
@@ -15,8 +15,8 @@ interface Truck {
   year: number | null
 }
 
-export function Profile({ driver, email, onOpenBrokers }: {
-  driver: Driver; email: string | undefined; onOpenBrokers: () => void
+export function Profile({ driver, email, onOpenBrokers, onOpenSettings }: {
+  driver: Driver; email: string | undefined; onOpenBrokers: () => void; onOpenSettings: () => void
 }) {
   const qc = useQueryClient()
   const [photoUrl, setPhotoUrl] = useState<string | null>(null)
@@ -130,7 +130,17 @@ export function Profile({ driver, email, onOpenBrokers }: {
 
   return (
     <div className="space-y-5 pb-6">
-      <ScreenHeader title="Profile" />
+      <ScreenHeader
+        title="Profile"
+        action={
+          <IconButton onClick={onOpenSettings} label="Settings">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z" />
+            </svg>
+          </IconButton>
+        }
+      />
 
       <div className="flex flex-col items-center pt-2 pb-2">
         <button
@@ -139,7 +149,7 @@ export function Profile({ driver, email, onOpenBrokers }: {
           disabled={uploadPhoto.isPending}
           aria-label="Change profile photo"
           className="relative w-24 h-24 rounded-full flex items-center justify-center text-white text-3xl font-semibold overflow-hidden active:opacity-90 cursor-pointer disabled:opacity-60"
-          style={{ background: '#c8410a' }}
+          style={{ background: 'var(--color-brand-500)' }}
         >
           {photoUrl ? (
             <img src={photoUrl} alt="Profile" className="w-full h-full object-cover" />

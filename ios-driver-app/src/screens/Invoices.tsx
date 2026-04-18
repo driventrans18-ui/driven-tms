@@ -211,7 +211,7 @@ export function Invoices({ driver }: { driver: Driver }) {
                     onClick={() => createInvoice.mutate(l)}
                     disabled={createInvoice.isPending}
                     className="py-2 px-4 rounded-lg text-sm font-semibold text-white disabled:opacity-50 cursor-pointer flex-shrink-0"
-                    style={{ background: '#c8410a' }}
+                    style={{ background: 'var(--color-brand-500)' }}
                   >
                     Create
                   </button>
@@ -461,7 +461,7 @@ function InvoiceSheet({ invoice, driverId, onClose }: {
               {logoUrl ? (
                 <img src={logoUrl} alt="Company logo" className="h-10 w-auto object-contain" />
               ) : (
-                <div className="w-10 h-10 rounded-lg flex items-center justify-center text-white text-base font-bold" style={{ background: '#c8410a' }}>D</div>
+                <div className="w-10 h-10 rounded-lg flex items-center justify-center text-white text-base font-bold" style={{ background: 'var(--color-brand-500)' }}>D</div>
               )}
               <p className="text-sm font-semibold text-gray-900">{settings?.company_name ?? 'Driven Transportation'}</p>
             </div>
@@ -502,7 +502,7 @@ function InvoiceSheet({ invoice, driverId, onClose }: {
             onClick={shareInvoice}
             disabled={busy !== null}
             className="py-3 rounded-xl text-white text-base font-semibold disabled:opacity-50 cursor-pointer"
-            style={{ background: '#c8410a' }}
+            style={{ background: 'var(--color-brand-500)' }}
           >
             {busy === 'share' ? 'Preparing…' : 'Share invoice'}
           </button>
@@ -722,7 +722,7 @@ export function InvoiceFormSheet({ driverId, editing, onClose }: {
                 return (
                   <button key={s} onClick={() => set('status', s)}
                     className="py-2 rounded-lg text-xs font-medium cursor-pointer"
-                    style={on ? { background: '#c8410a', color: 'white' } : { color: '#6b7280' }}>
+                    style={on ? { background: 'var(--color-brand-500)', color: 'white' } : { color: '#6b7280' }}>
                     {s}
                   </button>
                 )
@@ -784,7 +784,7 @@ export function InvoiceFormSheet({ driverId, editing, onClose }: {
                   onClick={() => (quickAdd === 'broker' ? createBroker : createCustomer).mutate()}
                   disabled={(quickAdd === 'broker' ? createBroker : createCustomer).isPending || !qa.name.trim()}
                   className="w-full py-2.5 rounded-lg text-white text-sm font-semibold disabled:opacity-50 cursor-pointer"
-                  style={{ background: '#c8410a' }}>
+                  style={{ background: 'var(--color-brand-500)' }}>
                   {(quickAdd === 'broker' ? createBroker : createCustomer).isPending
                     ? 'Saving…'
                     : quickAdd === 'broker' ? 'Add broker' : 'Add customer'}
@@ -845,7 +845,7 @@ export function InvoiceFormSheet({ driverId, editing, onClose }: {
 
         <button onClick={() => save.mutate()} disabled={save.isPending}
           className="w-full mt-5 py-3.5 rounded-xl text-white text-base font-semibold disabled:opacity-50 cursor-pointer"
-          style={{ background: '#c8410a' }}>
+          style={{ background: 'var(--color-brand-500)' }}>
           {save.isPending ? 'Saving…' : isEdit ? 'Save Changes' : 'Create Invoice'}
         </button>
       </div>

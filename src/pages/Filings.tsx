@@ -80,7 +80,7 @@ function DeadlineModal({ onClose, editing }: { onClose: () => void; editing: Tax
         <div className="flex justify-end gap-2 mt-5">
           <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 cursor-pointer">Cancel</button>
           <button onClick={() => save.mutate()} disabled={save.isPending || !form.period || !form.due_date}
-            className="px-4 py-2 text-sm text-white rounded-lg disabled:opacity-50 cursor-pointer" style={{ background: '#c8410a' }}>
+            className="px-4 py-2 text-sm text-white rounded-lg disabled:opacity-50 cursor-pointer" style={{ background: 'var(--color-brand-500)' }}>
             {save.isPending ? 'Saving…' : editing ? 'Save Changes' : 'Add Deadline'}
           </button>
         </div>
@@ -128,7 +128,7 @@ export function Filings() {
           <p className="text-sm text-gray-400 mt-0.5">IFTA, Form 2290, UCR, and custom deadlines</p>
         </div>
         <button onClick={() => setModal({ open: true, editing: null })}
-          className="flex items-center gap-1.5 px-3.5 py-2 text-sm font-medium text-white rounded-lg cursor-pointer" style={{ background: '#c8410a' }}>
+          className="flex items-center gap-1.5 px-3.5 py-2 text-sm font-medium text-white rounded-lg cursor-pointer" style={{ background: 'var(--color-brand-500)' }}>
           <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
           Add Deadline
         </button>
@@ -163,7 +163,7 @@ export function Filings() {
                   <div className="flex items-center gap-3 flex-shrink-0">
                     {s !== 'filed' && (
                       <button onClick={() => markFiled.mutate(it.id)}
-                        className="text-xs font-semibold cursor-pointer" style={{ color: '#c8410a' }}>
+                        className="text-xs font-semibold cursor-pointer" style={{ color: 'var(--color-brand-500)' }}>
                         Mark filed
                       </button>
                     )}

@@ -189,7 +189,7 @@ export function RemindersCard({ driverId }: { driverId: string }) {
       <button
         onClick={() => setForm({ editing: null })}
         className="w-full mt-3 py-3 rounded-xl text-white text-base font-semibold cursor-pointer"
-        style={{ background: '#c8410a' }}
+        style={{ background: 'var(--color-brand-500)' }}
       >
         Add Reminder
       </button>
@@ -297,7 +297,7 @@ function ReminderFormSheet({ driverId, editing, onClose }: {
                 return (
                   <button key={t} onClick={() => set('entity_type', t)}
                     className="py-2 rounded-lg text-xs font-medium cursor-pointer"
-                    style={on ? { background: '#c8410a', color: 'white' } : { color: '#6b7280' }}>
+                    style={on ? { background: 'var(--color-brand-500)', color: 'white' } : { color: '#6b7280' }}>
                     {t === 'driver' ? 'My driver record' : 'Company-wide'}
                   </button>
                 )
@@ -360,7 +360,7 @@ function ReminderFormSheet({ driverId, editing, onClose }: {
               <button
                 type="button"
                 onClick={rollForwardYear}
-                className="mt-3 text-xs font-semibold text-[#c8410a] cursor-pointer"
+                className="mt-3 text-xs font-semibold text-[var(--color-brand-500)] cursor-pointer"
               >
                 Roll due date +1 year
               </button>
@@ -372,7 +372,7 @@ function ReminderFormSheet({ driverId, editing, onClose }: {
 
         <button onClick={() => save.mutate()} disabled={save.isPending}
           className="w-full mt-5 py-3.5 rounded-xl text-white text-base font-semibold disabled:opacity-50 cursor-pointer"
-          style={{ background: '#c8410a' }}>
+          style={{ background: 'var(--color-brand-500)' }}>
           {save.isPending ? 'Saving…' : isEdit ? 'Save Changes' : 'Add Reminder'}
         </button>
       </div>

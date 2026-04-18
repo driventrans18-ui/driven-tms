@@ -40,13 +40,13 @@ export function CityAutocomplete({
           onChange={e => onTypeCity(e.target.value)}
           placeholder={placeholder}
           autoCorrect="off"
-          className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#c8410a]/20 focus:border-[#c8410a] transition-colors"
+          className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-500)]/20 focus:border-[var(--color-brand-500)] transition-colors"
         />
         <input
           value={stateValue}
           onChange={e => onTypeState(e.target.value.toUpperCase().slice(0, 2))}
           placeholder="ST"
-          className="w-14 px-2 py-2 text-sm rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#c8410a]/20 focus:border-[#c8410a] text-center uppercase"
+          className="w-14 px-2 py-2 text-sm rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-500)]/20 focus:border-[var(--color-brand-500)] text-center uppercase"
         />
       </div>
       {open && suggestions.length > 0 && (

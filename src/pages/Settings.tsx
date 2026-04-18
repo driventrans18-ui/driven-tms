@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { AppShell } from '../components/AppShell'
+import { useTheme, type ThemeMode } from '../hooks/useTheme'
 
 interface CompanySettings {
   id: string
@@ -159,13 +160,13 @@ export function Settings() {
               <label className="block text-xs font-medium text-gray-600 mb-1">Company Name</label>
               <input value={form.company_name} onChange={e => set('company_name', e.target.value)}
                 placeholder="Driven Transportation Inc."
-                className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#c8410a]/20 focus:border-[#c8410a]" />
+                className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-500)]/20 focus:border-[var(--color-brand-500)]" />
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Factoring Company Email</label>
               <input type="email" value={form.factoring_email} onChange={e => set('factoring_email', e.target.value)}
                 placeholder="driventransportation@fleetdocs.com"
-                className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#c8410a]/20 focus:border-[#c8410a]" />
+                className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-500)]/20 focus:border-[var(--color-brand-500)]" />
               <p className="text-xs text-gray-400 mt-1">Used by the "Email to factoring" button in the driver app.</p>
             </div>
           </div>
@@ -174,14 +175,53 @@ export function Settings() {
               onClick={() => saveMutation.mutate()}
               disabled={!dirty || saveMutation.isPending}
               className="px-4 py-2 text-sm text-white rounded-lg disabled:opacity-50 cursor-pointer"
-              style={{ background: '#c8410a' }}>
+              style={{ background: 'var(--color-brand-500)' }}>
               {saveMutation.isPending ? 'Saving…' : 'Save'}
             </button>
           </div>
         </section>
 
+        <AppearanceSection />
+
         {error && <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
       </div>
     </AppShell>
+  )
+}
+
+function AppearanceSection() {
+  const { mode, setTheme } = useTheme()
+  const options: Array<{ key: ThemeMode; label: string; hint: string }> = [
+    { key: 'system', label: 'System', hint: 'Match the OS appearance' },
+    { key: 'light',  label: 'Light',  hint: 'Always light' },
+    { key: 'dark',   label: 'Dark',   hint: 'Always dark' },
+  ]
+  return (
+    <section className="bg-white rounded-xl border border-gray-100 p-6">
+      <h2 className="text-sm font-semibold text-gray-900 mb-1">Appearance</h2>
+      <p className="text-xs text-gray-500 mb-4">Controls light / dark mode for this device only.</p>
+      <div className="grid grid-cols-3 gap-2">
+        {options.map(opt => {
+          const on = mode === opt.key
+          return (
+            <button key={opt.key} onClick={() => setTheme(opt.key)}
+              className="rounded-lg border px-3 py-3 text-left cursor-pointer transition-colors"
+              style={on
+                ? { borderColor: 'var(--color-brand-500)', background: 'var(--color-brand-100)' }
+                : { borderColor: 'var(--color-border-subtle)', background: 'transparent' }}
+            >
+              <span className="block text-sm font-semibold"
+                style={{ color: on ? 'var(--color-brand-600)' : 'var(--color-text-primary)' }}>
+                {opt.label}
+              </span>
+              <span className="block text-[11px] mt-0.5"
+                style={{ color: on ? 'var(--color-brand-600)' : 'var(--color-text-tertiary)' }}>
+                {opt.hint}
+              </span>
+            </button>
+          )
+        })}
+      </div>
+    </section>
   )
 }

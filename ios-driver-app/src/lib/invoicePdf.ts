@@ -43,7 +43,8 @@ export interface InvoicePdfData {
   totalAmount: number
 }
 
-const BRAND = '#c8410a'
+// jsPDF can't resolve CSS variables — these are baked for the PDF output.
+const BRAND = '#00A8E8'
 const MUTED = '#6b7280'
 const DARK  = '#111827'
 

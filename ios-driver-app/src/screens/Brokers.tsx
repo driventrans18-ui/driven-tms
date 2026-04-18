@@ -36,7 +36,7 @@ export function Brokers() {
   return (
     <div>
       <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search brokers or MC#"
-        className="w-full px-4 py-3.5 rounded-xl bg-white text-base border border-gray-200 focus:outline-none focus:border-[#c8410a] mb-4" />
+        className="w-full px-4 py-3.5 rounded-xl bg-white text-base border border-gray-200 focus:outline-none focus:border-[var(--color-brand-500)] mb-4" />
 
       {isLoading ? (
         <p className="text-center text-sm text-gray-400 py-10">Loading…</p>
@@ -89,7 +89,7 @@ function BrokerSheet({ broker, onClose }: { broker: Broker; onClose: () => void 
         {broker.phone && (
           <a href={`tel:${broker.phone}`}
             className="block mt-6 py-3.5 rounded-xl text-center text-white text-base font-semibold"
-            style={{ background: '#c8410a' }}>
+            style={{ background: 'var(--color-brand-500)' }}>
             Call
           </a>
         )}

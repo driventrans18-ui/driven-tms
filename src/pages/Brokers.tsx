@@ -21,7 +21,7 @@ function Field({ label, value, onChange, placeholder = '', type = 'text' }: {
     <div>
       <label className="block text-xs font-medium text-gray-600 mb-1">{label}</label>
       <input type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
-        className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#c8410a]/20 focus:border-[#c8410a] transition-colors" />
+        className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-500)]/20 focus:border-[var(--color-brand-500)] transition-colors" />
     </div>
   )
 }
@@ -86,14 +86,14 @@ function BrokerModal({ onClose, editing }: { onClose: () => void; editing: Broke
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Notes</label>
             <textarea value={form.notes} onChange={e => set('notes', e.target.value)} rows={2} placeholder="Any notes…"
-              className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#c8410a]/20 focus:border-[#c8410a] resize-none" />
+              className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-500)]/20 focus:border-[var(--color-brand-500)] resize-none" />
           </div>
         </div>
         {error && <p className="mt-3 text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
         <div className="flex justify-end gap-2 mt-5">
           <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 cursor-pointer">Cancel</button>
           <button onClick={() => mutation.mutate()} disabled={mutation.isPending || !form.name}
-            className="px-4 py-2 text-sm text-white rounded-lg disabled:opacity-50 cursor-pointer" style={{ background: '#c8410a' }}>
+            className="px-4 py-2 text-sm text-white rounded-lg disabled:opacity-50 cursor-pointer" style={{ background: 'var(--color-brand-500)' }}>
             {mutation.isPending ? 'Saving…' : editing ? 'Save Changes' : 'Add Broker'}
           </button>
         </div>
@@ -189,7 +189,7 @@ export function Brokers() {
           <p className="text-sm text-gray-400 mt-0.5">{brokers.length} brokers</p>
         </div>
         <button onClick={() => setModalState({ open: true, editing: null })}
-          className="flex items-center gap-1.5 px-3.5 py-2 text-sm font-medium text-white rounded-lg cursor-pointer" style={{ background: '#c8410a' }}>
+          className="flex items-center gap-1.5 px-3.5 py-2 text-sm font-medium text-white rounded-lg cursor-pointer" style={{ background: 'var(--color-brand-500)' }}>
           <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
           Add Broker
         </button>
@@ -197,7 +197,7 @@ export function Brokers() {
 
       <div className="mb-4">
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search brokers…"
-          className="px-3.5 py-2 text-sm rounded-xl border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-[#c8410a]/20 focus:border-[#c8410a] w-64" />
+          className="px-3.5 py-2 text-sm rounded-xl border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-500)]/20 focus:border-[var(--color-brand-500)] w-64" />
       </div>
 
       <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
@@ -218,7 +218,7 @@ export function Brokers() {
               <tbody className="divide-y divide-gray-50">
                 {filtered.map(broker => (
                   <tr key={broker.id} onClick={() => setSelected(selected?.id === broker.id ? null : broker)}
-                    className={`cursor-pointer transition-colors ${selected?.id === broker.id ? 'bg-[#c8410a]/5' : 'hover:bg-gray-50'}`}>
+                    className={`cursor-pointer transition-colors ${selected?.id === broker.id ? 'bg-[var(--color-brand-500)]/5' : 'hover:bg-gray-50'}`}>
                     <td className="px-4 py-3 font-medium text-gray-900">{broker.name}</td>
                     <td className="px-4 py-3 text-gray-600">{broker.contact_name ?? '—'}</td>
                     <td className="px-4 py-3 text-gray-600">{broker.phone ?? '—'}</td>

@@ -38,7 +38,7 @@ function Field({ label, value, onChange, placeholder = '', type = 'text' }: {
     <div>
       <label className="block text-xs font-medium text-gray-600 mb-1">{label}</label>
       <input type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
-        className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#c8410a]/20 focus:border-[#c8410a] transition-colors" />
+        className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-500)]/20 focus:border-[var(--color-brand-500)] transition-colors" />
     </div>
   )
 }
@@ -106,7 +106,7 @@ function DriverModal({ onClose, editing }: { onClose: () => void; editing: Drive
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">CDL Class</label>
               <select value={form.cdl_class} onChange={e => set('cdl_class', e.target.value)}
-                className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#c8410a]/20 focus:border-[#c8410a]">
+                className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-500)]/20 focus:border-[var(--color-brand-500)]">
                 {['Class A', 'Class B', 'Class C', 'Non-CDL'].map(c => <option key={c}>{c}</option>)}
               </select>
             </div>
@@ -114,7 +114,7 @@ function DriverModal({ onClose, editing }: { onClose: () => void; editing: Drive
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Status</label>
             <select value={form.status} onChange={e => set('status', e.target.value)}
-              className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#c8410a]/20 focus:border-[#c8410a]">
+              className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-500)]/20 focus:border-[var(--color-brand-500)]">
               {['Active', 'On Leave', 'Inactive'].map(s => <option key={s}>{s}</option>)}
             </select>
           </div>
@@ -123,7 +123,7 @@ function DriverModal({ onClose, editing }: { onClose: () => void; editing: Drive
         <div className="flex justify-end gap-2 mt-5">
           <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 cursor-pointer">Cancel</button>
           <button onClick={() => mutation.mutate()} disabled={mutation.isPending || (!form.first_name && !form.last_name)}
-            className="px-4 py-2 text-sm text-white rounded-lg disabled:opacity-50 cursor-pointer" style={{ background: '#c8410a' }}>
+            className="px-4 py-2 text-sm text-white rounded-lg disabled:opacity-50 cursor-pointer" style={{ background: 'var(--color-brand-500)' }}>
             {mutation.isPending ? 'Saving…' : editing ? 'Save Changes' : 'Add Driver'}
           </button>
         </div>
@@ -212,7 +212,7 @@ export function Drivers() {
           <p className="text-sm text-gray-400 mt-0.5">{drivers.length} drivers</p>
         </div>
         <button onClick={() => setModalState({ open: true, editing: null })}
-          className="flex items-center gap-1.5 px-3.5 py-2 text-sm font-medium text-white rounded-lg cursor-pointer" style={{ background: '#c8410a' }}>
+          className="flex items-center gap-1.5 px-3.5 py-2 text-sm font-medium text-white rounded-lg cursor-pointer" style={{ background: 'var(--color-brand-500)' }}>
           <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
           Add Driver
         </button>
@@ -245,7 +245,7 @@ export function Drivers() {
               <tbody className="divide-y divide-gray-50">
                 {filtered.map(driver => (
                   <tr key={driver.id} onClick={() => setSelected(selected?.id === driver.id ? null : driver)}
-                    className={`cursor-pointer transition-colors ${selected?.id === driver.id ? 'bg-[#c8410a]/5' : 'hover:bg-gray-50'}`}>
+                    className={`cursor-pointer transition-colors ${selected?.id === driver.id ? 'bg-[var(--color-brand-500)]/5' : 'hover:bg-gray-50'}`}>
                     <td className="px-4 py-3 font-medium text-gray-900">{driverName(driver)}</td>
                     <td className="px-4 py-3 text-gray-600">{driver.phone ?? '—'}</td>
                     <td className="px-4 py-3 text-gray-600">{driver.email ?? '—'}</td>

@@ -164,12 +164,12 @@ function InvoiceModal({ onClose, editing }: { onClose: () => void; editing: Invo
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Invoice #</label>
               <input value={form.invoice_number} onChange={e => set('invoice_number', e.target.value)} placeholder="INV-001"
-                className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#c8410a]/20 focus:border-[#c8410a]" />
+                className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-500)]/20 focus:border-[var(--color-brand-500)]" />
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Status</label>
               <select value={form.status} onChange={e => set('status', e.target.value)}
-                className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#c8410a]/20 focus:border-[#c8410a]">
+                className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-500)]/20 focus:border-[var(--color-brand-500)]">
                 {(['Draft', 'Sent', 'Overdue', 'Paid'] as InvoiceStatus[]).map(s => <option key={s}>{s}</option>)}
               </select>
             </div>
@@ -178,7 +178,7 @@ function InvoiceModal({ onClose, editing }: { onClose: () => void; editing: Invo
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Load</label>
             <select value={form.load_id} onChange={e => set('load_id', e.target.value)}
-              className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#c8410a]/20 focus:border-[#c8410a]">
+              className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-500)]/20 focus:border-[var(--color-brand-500)]">
               <option value="">— Select load —</option>
               {loads.map(l => (
                 <option key={l.id} value={l.id}>{l.load_number || `#${l.id.slice(0,8)}`} — {l.origin_city} → {l.dest_city}</option>
@@ -194,7 +194,7 @@ function InvoiceModal({ onClose, editing }: { onClose: () => void; editing: Invo
                 return (
                   <button key={k} type="button" onClick={() => setBillTo(k)}
                     className="py-1.5 rounded-md text-xs font-medium transition-colors cursor-pointer"
-                    style={on ? { background: '#c8410a', color: 'white' } : { color: '#6b7280' }}>
+                    style={on ? { background: 'var(--color-brand-500)', color: 'white' } : { color: '#6b7280' }}>
                     {k === 'broker' ? 'Broker' : 'Customer'}
                   </button>
                 )
@@ -207,7 +207,7 @@ function InvoiceModal({ onClose, editing }: { onClose: () => void; editing: Invo
                   if (e.target.value === '__new') { setQuickAdd('broker'); setQaError(null); return }
                   set('broker_id', e.target.value)
                 }}
-                className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#c8410a]/20 focus:border-[#c8410a]">
+                className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-500)]/20 focus:border-[var(--color-brand-500)]">
                 <option value="">— Select broker —</option>
                 {brokers.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
                 <option value="__new">+ New broker…</option>
@@ -219,7 +219,7 @@ function InvoiceModal({ onClose, editing }: { onClose: () => void; editing: Invo
                   if (e.target.value === '__new') { setQuickAdd('customer'); setQaError(null); return }
                   set('customer_id', e.target.value)
                 }}
-                className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#c8410a]/20 focus:border-[#c8410a]">
+                className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-500)]/20 focus:border-[var(--color-brand-500)]">
                 <option value="">— Select customer —</option>
                 {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                 <option value="__new">+ New customer…</option>
@@ -237,26 +237,26 @@ function InvoiceModal({ onClose, editing }: { onClose: () => void; editing: Invo
                 </div>
                 <input value={qa.name} onChange={e => setQaField('name', e.target.value)}
                   placeholder={quickAdd === 'broker' ? 'Acme Freight Brokers' : 'Walmart DC #4321'}
-                  className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#c8410a]/20 focus:border-[#c8410a]" />
+                  className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-500)]/20 focus:border-[var(--color-brand-500)]" />
                 <div className="grid grid-cols-2 gap-2">
                   <input value={qa.email} onChange={e => setQaField('email', e.target.value)} placeholder="Email" type="email"
-                    className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#c8410a]/20 focus:border-[#c8410a]" />
+                    className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-500)]/20 focus:border-[var(--color-brand-500)]" />
                   <input value={qa.phone} onChange={e => setQaField('phone', e.target.value)} placeholder="Phone" type="tel"
-                    className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#c8410a]/20 focus:border-[#c8410a]" />
+                    className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-500)]/20 focus:border-[var(--color-brand-500)]" />
                 </div>
                 {quickAdd === 'broker' ? (
                   <input value={qa.mc} onChange={e => setQaField('mc', e.target.value)} placeholder="MC# (optional)"
-                    className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#c8410a]/20 focus:border-[#c8410a]" />
+                    className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-500)]/20 focus:border-[var(--color-brand-500)]" />
                 ) : (
                   <input value={qa.address} onChange={e => setQaField('address', e.target.value)} placeholder="Address (optional)"
-                    className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#c8410a]/20 focus:border-[#c8410a]" />
+                    className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-500)]/20 focus:border-[var(--color-brand-500)]" />
                 )}
                 {qaError && <p className="text-xs text-red-600">{qaError}</p>}
                 <button type="button"
                   onClick={() => (quickAdd === 'broker' ? createBroker : createCustomer).mutate()}
                   disabled={(quickAdd === 'broker' ? createBroker : createCustomer).isPending || !qa.name.trim()}
                   className="w-full py-2 text-sm text-white rounded-lg disabled:opacity-50 cursor-pointer"
-                  style={{ background: '#c8410a' }}>
+                  style={{ background: 'var(--color-brand-500)' }}>
                   {(quickAdd === 'broker' ? createBroker : createCustomer).isPending
                     ? 'Saving…'
                     : quickAdd === 'broker' ? 'Add broker' : 'Add customer'}
@@ -268,33 +268,33 @@ function InvoiceModal({ onClose, editing }: { onClose: () => void; editing: Invo
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Amount ($)</label>
             <input type="number" value={form.amount} onChange={e => set('amount', e.target.value)} placeholder="0.00"
-              className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#c8410a]/20 focus:border-[#c8410a]" />
+              className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-500)]/20 focus:border-[var(--color-brand-500)]" />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Issued Date</label>
               <input type="date" value={form.issued_date} onChange={e => set('issued_date', e.target.value)}
-                className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#c8410a]/20 focus:border-[#c8410a]" />
+                className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-500)]/20 focus:border-[var(--color-brand-500)]" />
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Due Date</label>
               <input type="date" value={form.due_date} onChange={e => set('due_date', e.target.value)}
-                className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#c8410a]/20 focus:border-[#c8410a]" />
+                className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-500)]/20 focus:border-[var(--color-brand-500)]" />
             </div>
           </div>
 
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Notes</label>
             <textarea value={form.notes} onChange={e => set('notes', e.target.value)} rows={2} placeholder="Any notes…"
-              className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#c8410a]/20 focus:border-[#c8410a] resize-none" />
+              className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-500)]/20 focus:border-[var(--color-brand-500)] resize-none" />
           </div>
         </div>
         {error && <p className="mt-3 text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
         <div className="flex justify-end gap-2 mt-5">
           <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 cursor-pointer">Cancel</button>
           <button onClick={() => mutation.mutate()} disabled={mutation.isPending}
-            className="px-4 py-2 text-sm text-white rounded-lg disabled:opacity-50 cursor-pointer" style={{ background: '#c8410a' }}>
+            className="px-4 py-2 text-sm text-white rounded-lg disabled:opacity-50 cursor-pointer" style={{ background: 'var(--color-brand-500)' }}>
             {mutation.isPending ? 'Saving…' : editing ? 'Save Changes' : 'Create Invoice'}
           </button>
         </div>
@@ -428,7 +428,7 @@ export function Invoices() {
           <p className="text-sm text-gray-400 mt-0.5">{invoices.length} total · {fmt(totalFiltered)} showing</p>
         </div>
         <button onClick={() => setModalState({ open: true, editing: null })}
-          className="flex items-center gap-1.5 px-3.5 py-2 text-sm font-medium text-white rounded-lg cursor-pointer" style={{ background: '#c8410a' }}>
+          className="flex items-center gap-1.5 px-3.5 py-2 text-sm font-medium text-white rounded-lg cursor-pointer" style={{ background: 'var(--color-brand-500)' }}>
           <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
           New Invoice
         </button>
@@ -462,7 +462,7 @@ export function Invoices() {
               <tbody className="divide-y divide-gray-50">
                 {filtered.map(inv => (
                   <tr key={inv.id} onClick={() => setSelected(selected?.id === inv.id ? null : inv)}
-                    className={`cursor-pointer transition-colors ${selected?.id === inv.id ? 'bg-[#c8410a]/5' : 'hover:bg-gray-50'}`}>
+                    className={`cursor-pointer transition-colors ${selected?.id === inv.id ? 'bg-[var(--color-brand-500)]/5' : 'hover:bg-gray-50'}`}>
                     <td className="px-4 py-3 font-medium text-gray-900">{inv.invoice_number || `#${inv.id.slice(0,8)}`}</td>
                     <td className="px-4 py-3 text-gray-600">{inv.loads?.load_number ?? (inv.load_id ? `#${inv.load_id.slice(0,8)}` : '—')}</td>
                     <td className="px-4 py-3 text-gray-600">{inv.customers?.name ?? inv.brokers?.name ?? '—'}</td>
