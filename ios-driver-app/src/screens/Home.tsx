@@ -198,7 +198,8 @@ export function Home({ driver, onGoToLoads, onOpenDriverMode }: {
   })
 
   return (
-    <div className="space-y-5">
+    <>
+    <div className="space-y-5 pb-28">
       {activeLoad ? (
         <div>
           <h2 className="px-1 text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Active load</h2>
@@ -226,31 +227,40 @@ export function Home({ driver, onGoToLoads, onOpenDriverMode }: {
       <ExpirationsCard driverId={driver.id} />
 
       <LoadCalendar driverId={driver.id} />
+    </div>
 
-      <div className="grid grid-cols-3 gap-2">
+    {/* Fixed quick-action bar — always reachable above the tab bar. */}
+    <div
+      className="fixed left-0 right-0 z-30 bg-white/90 backdrop-blur border-t border-gray-200 px-4 pt-2"
+      style={{ bottom: 'calc(env(safe-area-inset-bottom, 0px) + 64px)' }}
+      role="toolbar"
+      aria-label="Quick actions"
+    >
+      <div className="grid grid-cols-3 gap-2 pb-2">
         <button onClick={() => capturePod.mutate()} disabled={!activeLoad || capturePod.isPending}
-          className="bg-white rounded-2xl p-4 text-center active:bg-gray-50 disabled:opacity-40 cursor-pointer">
-          <span className="block text-2xl">📷</span>
-          <span className="block text-xs font-medium text-gray-700 mt-1">
+          className="bg-white rounded-xl border border-gray-100 py-2.5 text-center active:bg-gray-50 disabled:opacity-40 cursor-pointer">
+          <span className="block text-xl leading-none">📷</span>
+          <span className="block text-[11px] font-medium text-gray-700 mt-0.5">
             {capturePod.isPending ? 'Uploading…' : 'Capture POD'}
           </span>
         </button>
         <button onClick={() => checkIn.mutate()} disabled={checkIn.isPending}
-          className="bg-white rounded-2xl p-4 text-center active:bg-gray-50 disabled:opacity-40 cursor-pointer">
-          <span className="block text-2xl">📍</span>
-          <span className="block text-xs font-medium text-gray-700 mt-1">
+          className="bg-white rounded-xl border border-gray-100 py-2.5 text-center active:bg-gray-50 disabled:opacity-40 cursor-pointer">
+          <span className="block text-xl leading-none">📍</span>
+          <span className="block text-[11px] font-medium text-gray-700 mt-0.5">
             {checkIn.isPending ? 'Pinging…' : 'Check In'}
           </span>
         </button>
         <button onClick={() => activeLoad && markDelivered.mutate(activeLoad.id)}
           disabled={!activeLoad || markDelivered.isPending}
-          className="bg-white rounded-2xl p-4 text-center active:bg-gray-50 disabled:opacity-40 cursor-pointer">
-          <span className="block text-2xl">✓</span>
-          <span className="block text-xs font-medium text-gray-700 mt-1">
+          className="bg-white rounded-xl border border-gray-100 py-2.5 text-center active:bg-gray-50 disabled:opacity-40 cursor-pointer">
+          <span className="block text-xl leading-none">✓</span>
+          <span className="block text-[11px] font-medium text-gray-700 mt-0.5">
             {markDelivered.isPending ? 'Saving…' : 'Mark Delivered'}
           </span>
         </button>
       </div>
     </div>
+    </>
   )
 }
