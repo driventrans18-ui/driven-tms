@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 
 type LoadStatus = 'Pending' | 'Assigned' | 'In Transit' | 'Delivered'
@@ -19,17 +19,20 @@ interface CalLoad {
 }
 
 const STATUS_DOT: Record<LoadStatus, string> = {
-  Pending:      '#9ca3af', // gray
-  Assigned:     '#f59e0b', // amber
-  'In Transit': '#3b82f6', // blue
-  Delivered:    '#16a34a', // green
+  Pending:      '#9ca3af',
+  Assigned:     '#f59e0b',
+  'In Transit': '#3b82f6',
+  Delivered:    '#16a34a',
 }
 
 // Day of the month the load "belongs to" — prefer pickup_at, then eta,
 // then created_at. All normalized to local YYYY-MM-DD.
 function loadDayKey(l: CalLoad): string {
   const raw = l.pickup_at ?? l.eta ?? l.created_at
-  const d = new Date(raw)
+  return toKey(new Date(raw))
+}
+
+function toKey(d: Date): string {
   const y = d.getFullYear()
   const m = (d.getMonth() + 1).toString().padStart(2, '0')
   const day = d.getDate().toString().padStart(2, '0')
@@ -47,9 +50,8 @@ function startOfMonth(d: Date) {
 export function LoadCalendar({ driverId }: { driverId: string }) {
   const [cursor, setCursor] = useState<Date>(() => startOfMonth(new Date()))
   const [selected, setSelected] = useState<string | null>(null)
+  const [adding, setAdding] = useState(false)
 
-  // Pull anything in the current visible month (plus a small buffer) so
-  // cells can show dots immediately.
   const { data: loads = [] } = useQuery({
     queryKey: ['calendar-loads', driverId, cursor.getFullYear(), cursor.getMonth()],
     queryFn: async () => {
@@ -65,7 +67,6 @@ export function LoadCalendar({ driverId }: { driverId: string }) {
     },
   })
 
-  // Build an index of yyyy-mm-dd → loads that day.
   const byDay = useMemo(() => {
     const map = new Map<string, CalLoad[]>()
     for (const l of loads) {
@@ -77,10 +78,9 @@ export function LoadCalendar({ driverId }: { driverId: string }) {
     return map
   }, [loads])
 
-  // 42-cell grid (6 weeks) starting from the Sunday on or before the 1st.
   const cells = useMemo(() => {
     const start = startOfMonth(cursor)
-    const startDay = start.getDay() // 0 = Sun
+    const startDay = start.getDay()
     const gridStart = new Date(start); gridStart.setDate(gridStart.getDate() - startDay)
     return Array.from({ length: 42 }, (_, i) => {
       const d = new Date(gridStart); d.setDate(gridStart.getDate() + i)
@@ -89,9 +89,7 @@ export function LoadCalendar({ driverId }: { driverId: string }) {
   }, [cursor])
 
   const isInCurrentMonth = (d: Date) => d.getMonth() === cursor.getMonth()
-  const todayKey = (() => {
-    const t = new Date(); const y = t.getFullYear(); const m = (t.getMonth()+1).toString().padStart(2,'0'); const d = t.getDate().toString().padStart(2,'0'); return `${y}-${m}-${d}`
-  })()
+  const todayKey = toKey(new Date())
 
   const selectedLoads = selected ? (byDay.get(selected) ?? []) : []
 
@@ -101,9 +99,9 @@ export function LoadCalendar({ driverId }: { driverId: string }) {
   return (
     <div className="bg-white rounded-2xl p-4">
       <div className="flex items-center justify-between mb-3">
-        <button onClick={prev} className="w-8 h-8 flex items-center justify-center text-gray-500 text-lg cursor-pointer">‹</button>
+        <button onClick={prev} aria-label="Previous month" className="w-10 h-10 flex items-center justify-center text-gray-500 text-lg cursor-pointer">‹</button>
         <span className="text-sm font-semibold text-gray-900">{monthLabel(cursor)}</span>
-        <button onClick={next} className="w-8 h-8 flex items-center justify-center text-gray-500 text-lg cursor-pointer">›</button>
+        <button onClick={next} aria-label="Next month" className="w-10 h-10 flex items-center justify-center text-gray-500 text-lg cursor-pointer">›</button>
       </div>
 
       <div className="grid grid-cols-7 gap-1 mb-1">
@@ -114,9 +112,7 @@ export function LoadCalendar({ driverId }: { driverId: string }) {
 
       <div className="grid grid-cols-7 gap-1">
         {cells.map((d, i) => {
-          const k = (() => {
-            const y = d.getFullYear(); const m = (d.getMonth()+1).toString().padStart(2,'0'); const day = d.getDate().toString().padStart(2,'0'); return `${y}-${m}-${day}`
-          })()
+          const k = toKey(d)
           const inMonth = isInCurrentMonth(d)
           const dayLoads = byDay.get(k) ?? []
           const isToday = k === todayKey
@@ -124,9 +120,12 @@ export function LoadCalendar({ driverId }: { driverId: string }) {
           return (
             <button
               key={i}
-              onClick={() => setSelected(dayLoads.length > 0 ? k : null)}
-              disabled={dayLoads.length === 0}
-              className={`aspect-square rounded-lg flex flex-col items-center justify-center text-sm cursor-pointer disabled:cursor-default ${
+              // Every cell is tappable now — empty days open the add-load flow
+              // so the driver can back-fill ("I forgot to log Tuesday").
+              onClick={() => setSelected(isSel ? null : k)}
+              aria-label={`${d.toDateString()}${dayLoads.length ? `, ${dayLoads.length} load${dayLoads.length === 1 ? '' : 's'}` : ''}`}
+              aria-pressed={isSel}
+              className={`aspect-square rounded-lg flex flex-col items-center justify-center text-sm cursor-pointer ${
                 isSel ? 'ring-2 ring-[#c8410a]' : ''
               }`}
               style={{
@@ -147,22 +146,271 @@ export function LoadCalendar({ driverId }: { driverId: string }) {
         })}
       </div>
 
-      {selectedLoads.length > 0 && (
-        <div className="mt-3 pt-3 border-t border-gray-100 space-y-1.5">
-          <p className="text-[10px] uppercase tracking-wide text-gray-400 font-semibold">
-            {new Date(selected!).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
-          </p>
-          {selectedLoads.map(l => (
-            <div key={l.id} className="flex items-center gap-2 text-sm">
-              <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: STATUS_DOT[l.status] }} />
-              <span className="text-gray-700 flex-1 truncate">
-                {l.load_number || `#${l.id.slice(0, 8)}`} · {[l.origin_city, l.dest_city].filter(Boolean).join(' → ') || '—'}
-              </span>
-              <span className="text-gray-500 text-xs">{l.status}</span>
+      {selected && (
+        <div className="mt-3 pt-3 border-t border-gray-100 space-y-2">
+          <div className="flex items-center justify-between">
+            <p className="text-[10px] uppercase tracking-wide text-gray-400 font-semibold">
+              {new Date(selected).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+            </p>
+            <button
+              onClick={() => setAdding(true)}
+              className="text-xs font-semibold text-[#c8410a] active:opacity-70 cursor-pointer"
+            >
+              + Add load
+            </button>
+          </div>
+          {selectedLoads.length > 0 ? (
+            <div className="space-y-1.5">
+              {selectedLoads.map(l => (
+                <div key={l.id} className="flex items-center gap-2 text-sm">
+                  <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: STATUS_DOT[l.status] }} />
+                  <span className="text-gray-700 flex-1 truncate">
+                    {l.load_number || `#${l.id.slice(0, 8)}`} · {[l.origin_city, l.dest_city].filter(Boolean).join(' → ') || '—'}
+                  </span>
+                  <span className="text-gray-500 text-xs">{l.status}</span>
+                </div>
+              ))}
             </div>
-          ))}
+          ) : (
+            <p className="text-xs text-gray-400">No loads yet. Tap + Add load to record one.</p>
+          )}
         </div>
       )}
+
+      {adding && selected && (
+        <AddLoadForDateSheet
+          dateKey={selected}
+          driverId={driverId}
+          onClose={() => setAdding(false)}
+        />
+      )}
+    </div>
+  )
+}
+
+// ── Add-load-for-date sheet ──────────────────────────────────────────────────
+
+// Minimal backfill sheet. Defaults pickup_at to 09:00 and deliver_by to 17:00
+// on the selected date, and defaults status based on whether the date is in
+// the past (Delivered) or not (Pending). The full edit form remains available
+// under the Loads tab for anything this doesn't cover.
+function AddLoadForDateSheet({
+  dateKey, driverId, onClose,
+}: {
+  dateKey: string
+  driverId: string
+  onClose: () => void
+}) {
+  const qc = useQueryClient()
+  const dayDate = new Date(dateKey + 'T00:00:00')
+  const isPast = dayDate < new Date(new Date().setHours(0, 0, 0, 0))
+
+  const [form, setForm] = useState({
+    load_number:  '',
+    origin_city:  '',
+    origin_state: '',
+    dest_city:    '',
+    dest_state:   '',
+    miles:        '',
+    rate:         '',
+    broker_id:    '',
+    status:       (isPast ? 'Delivered' : 'Pending') as LoadStatus,
+    notes:        '',
+  })
+  const [error, setError] = useState<string | null>(null)
+  const set = <K extends keyof typeof form>(k: K, v: typeof form[K]) =>
+    setForm(f => ({ ...f, [k]: v }))
+
+  const { data: brokers = [] } = useQuery({
+    queryKey: ['brokers-simple'],
+    queryFn: async () => {
+      const { data } = await supabase.from('brokers').select('id, name').order('name')
+      return (data ?? []) as Array<{ id: string; name: string }>
+    },
+  })
+
+  const save = useMutation({
+    mutationFn: async () => {
+      const pickupAt  = new Date(dateKey + 'T09:00:00').toISOString()
+      const deliverBy = new Date(dateKey + 'T17:00:00').toISOString()
+      const payload = {
+        driver_id:    driverId,
+        load_number:  form.load_number || null,
+        origin_city:  form.origin_city || null,
+        origin_state: form.origin_state || null,
+        dest_city:    form.dest_city   || null,
+        dest_state:   form.dest_state  || null,
+        miles:        form.miles ? Number(form.miles) : null,
+        rate:         form.rate  ? Number(form.rate)  : null,
+        broker_id:    form.broker_id || null,
+        status:       form.status,
+        pickup_at:    pickupAt,
+        deliver_by:   deliverBy,
+        eta:          dateKey,
+        delivery_notes: form.notes || null,
+      }
+      const { error } = await supabase.from('loads').insert(payload)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['calendar-loads', driverId] })
+      qc.invalidateQueries({ queryKey: ['my-loads', driverId] })
+      qc.invalidateQueries({ queryKey: ['active-load', driverId] })
+      qc.invalidateQueries({ queryKey: ['driver-summary', driverId] })
+      onClose()
+    },
+    onError: (e: Error) => setError(e.message),
+  })
+
+  const canSubmit = !save.isPending && (form.origin_city || form.dest_city || form.load_number)
+  const prettyDate = dayDate.toLocaleDateString('en-US', {
+    weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
+  })
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end" role="dialog" aria-modal="true" aria-labelledby="add-load-for-date-title">
+      <div className="absolute inset-0 bg-black/30" onClick={onClose} />
+      <div
+        className="relative bg-white w-full rounded-t-3xl p-6 max-h-[88vh] overflow-y-auto"
+        style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 16px) + 16px)' }}
+      >
+        <div className="flex items-center justify-between mb-1">
+          <h2 id="add-load-for-date-title" className="text-lg font-bold text-gray-900">Add load</h2>
+          <button onClick={onClose} aria-label="Close" className="text-gray-400 text-lg cursor-pointer">✕</button>
+        </div>
+        <p className="text-xs text-gray-500 mb-4">{prettyDate}</p>
+
+        <div className="space-y-3">
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Load #</label>
+            <input
+              value={form.load_number}
+              onChange={e => set('load_number', e.target.value)}
+              placeholder="LD-1042"
+              className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-base"
+            />
+          </div>
+
+          <div className="grid grid-cols-[1fr_72px] gap-2">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Origin city</label>
+              <input
+                value={form.origin_city}
+                onChange={e => set('origin_city', e.target.value)}
+                placeholder="Webster"
+                className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-base"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">State</label>
+              <input
+                value={form.origin_state}
+                onChange={e => set('origin_state', e.target.value.toUpperCase().slice(0, 2))}
+                placeholder="NY"
+                className="w-full px-3 py-3 rounded-xl bg-gray-50 border border-gray-200 text-base uppercase"
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-[1fr_72px] gap-2">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Destination city</label>
+              <input
+                value={form.dest_city}
+                onChange={e => set('dest_city', e.target.value)}
+                placeholder="Columbus"
+                className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-base"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">State</label>
+              <input
+                value={form.dest_state}
+                onChange={e => set('dest_state', e.target.value.toUpperCase().slice(0, 2))}
+                placeholder="OH"
+                className="w-full px-3 py-3 rounded-xl bg-gray-50 border border-gray-200 text-base uppercase"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Miles</label>
+              <input
+                type="number" inputMode="numeric" placeholder="0"
+                value={form.miles}
+                onChange={e => set('miles', e.target.value)}
+                className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-base"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Rate ($)</label>
+              <input
+                type="number" inputMode="decimal" placeholder="0.00"
+                value={form.rate}
+                onChange={e => set('rate', e.target.value)}
+                className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-base"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Broker</label>
+            <select
+              value={form.broker_id}
+              onChange={e => set('broker_id', e.target.value)}
+              className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-base"
+            >
+              <option value="">— None —</option>
+              {brokers.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-2">Status</label>
+            <div className="grid grid-cols-4 gap-1 bg-gray-100 rounded-xl p-1">
+              {(['Pending', 'Assigned', 'In Transit', 'Delivered'] as LoadStatus[]).map(s => {
+                const on = form.status === s
+                return (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => set('status', s)}
+                    className="py-2 rounded-lg text-xs font-medium cursor-pointer"
+                    style={on ? { background: '#c8410a', color: 'white' } : { color: '#6b7280' }}
+                  >
+                    {s}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Notes</label>
+            <input
+              value={form.notes}
+              onChange={e => set('notes', e.target.value)}
+              placeholder="Optional"
+              className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-base"
+            />
+          </div>
+        </div>
+
+        {error && (
+          <p role="alert" className="mt-3 text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">
+            {error}
+          </p>
+        )}
+
+        <button
+          onClick={() => save.mutate()}
+          disabled={!canSubmit}
+          className="w-full mt-5 py-3.5 rounded-xl text-white text-base font-semibold disabled:opacity-50 cursor-pointer"
+          style={{ background: '#c8410a' }}
+        >
+          {save.isPending ? 'Saving…' : 'Save Load'}
+        </button>
+      </div>
     </div>
   )
 }
