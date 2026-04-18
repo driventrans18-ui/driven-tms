@@ -4,9 +4,11 @@ import { supabase } from '../lib/supabase'
 import { LoadCard, type LoadCardLoad } from '../components/LoadCard'
 import { DocViewer } from '../components/DocViewer'
 import { isDocScanAvailable, scanDocument } from '../lib/docScan'
+import { captureStampedPhoto } from '../lib/stampedCamera'
+import { estimateMiles } from '../lib/estimateMiles'
 import type { Driver } from '../hooks/useDriver'
 
-type DocKind = 'rate_con' | 'pod' | 'other'
+type DocKind = 'rate_con' | 'pod' | 'freight' | 'other'
 
 interface LoadDocument {
   id: string
@@ -218,6 +220,7 @@ function NewLoadSheet({ driverId, onClose }: { driverId: string; onClose: () => 
   })
   const [error, setError] = useState<string | null>(null)
   const [quickBrokerOpen, setQuickBrokerOpen] = useState(false)
+  const [estimating, setEstimating] = useState(false)
   const set = <K extends keyof typeof form>(k: K, v: typeof form[K]) =>
     setForm(f => ({ ...f, [k]: v }))
 
@@ -350,7 +353,33 @@ function NewLoadSheet({ driverId, onClose }: { driverId: string; onClose: () => 
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Miles</label>
+                <div className="flex items-baseline justify-between mb-1">
+                  <label className="block text-xs font-medium text-gray-600">Miles</label>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (estimating) return
+                      setEstimating(true); setError(null)
+                      try {
+                        const m = await estimateMiles(form.origin_city, form.origin_state, form.dest_city, form.dest_state)
+                        if (m == null) {
+                          setError('Could not estimate — check the origin and destination.')
+                        } else {
+                          set('miles', String(m))
+                        }
+                      } catch (e) {
+                        setError((e as Error).message)
+                      } finally {
+                        setEstimating(false)
+                      }
+                    }}
+                    disabled={estimating || !form.origin_city || !form.dest_city}
+                    className="text-[11px] font-semibold uppercase tracking-wide cursor-pointer disabled:opacity-40"
+                    style={{ color: '#c8410a' }}
+                  >
+                    {estimating ? 'Estimating…' : 'Estimate'}
+                  </button>
+                </div>
                 <input type="number" inputMode="decimal" value={form.miles} onChange={e => set('miles', e.target.value)} placeholder="0"
                   className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-base" />
               </div>
@@ -556,6 +585,39 @@ function LoadDocs({ load }: { load: LoadDetail }) {
     setViewing({ url: data.signedUrl, mimeType: doc.mime_type ?? null, fileName: doc.file_name })
   }
 
+  // Capture a photo with a burned-in timestamp + GPS stamp for freight
+  // verification. Upload as a 'freight' doc.
+  const captureFreight = async () => {
+    setBusy('freight' as DocKind); setError(null)
+    try {
+      const stamped = await captureStampedPhoto()
+      if (!stamped) { setBusy(null); return }
+      const fileName = `freight-${Date.now()}.jpg`
+      const path = `${load.id}/${crypto.randomUUID()}-${fileName}`
+      const bytes = Uint8Array.from(atob(stamped.base64), c => c.charCodeAt(0))
+      const blob = new Blob([bytes], { type: 'image/jpeg' })
+      const { error: upErr } = await supabase.storage.from(DOC_BUCKET).upload(path, blob, {
+        contentType: 'image/jpeg',
+      })
+      if (upErr) throw upErr
+      const { error: dbErr } = await supabase.from('load_documents').insert({
+        load_id: load.id,
+        kind: 'freight',
+        storage_path: path,
+        file_name: fileName,
+        mime_type: 'image/jpeg',
+        file_size: blob.size,
+      })
+      if (dbErr) throw dbErr
+      qc.invalidateQueries({ queryKey: ['load-documents', load.id] })
+    } catch (e) {
+      const msg = (e as Error).message
+      if (msg !== 'User cancelled') setError(msg)
+    } finally {
+      setBusy(null)
+    }
+  }
+
   // Upload scanned pages (from native iOS document scanner) as a Rate Con.
   // Each page becomes its own load_documents row so the user can email them
   // or review individually.
@@ -653,6 +715,11 @@ function LoadDocs({ load }: { load: LoadDetail }) {
           {busy === 'scan' ? 'Uploading scan…' : 'Scan Rate Con (multi-page)'}
         </button>
       )}
+      <button onClick={captureFreight} disabled={busy !== null}
+        className="w-full mb-2 py-2.5 rounded-lg text-sm font-semibold text-white disabled:opacity-50 cursor-pointer"
+        style={{ background: '#0a7fc8' }}>
+        {busy === 'freight' ? 'Uploading freight photo…' : '📸 Freight photo (time-stamped)'}
+      </button>
       <div className="grid grid-cols-3 gap-2 mb-3">
         <DocButton label="+ Rate Con" busy={busy === 'rate_con'} disabled={busy !== null} onClick={() => uploadPhoto('rate_con')} />
         <DocButton label="+ POD"      busy={busy === 'pod'}      disabled={busy !== null} onClick={() => uploadPhoto('pod')} />
@@ -664,7 +731,7 @@ function LoadDocs({ load }: { load: LoadDetail }) {
           {docs.map(d => (
             <li key={d.id} className="flex items-center gap-2 text-sm">
               <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 uppercase">
-                {d.kind === 'rate_con' ? 'RATE' : d.kind === 'pod' ? 'POD' : 'OTHER'}
+                {d.kind === 'rate_con' ? 'RATE' : d.kind === 'pod' ? 'POD' : d.kind === 'freight' ? 'FREIGHT' : 'OTHER'}
               </span>
               <button onClick={() => openDoc(d)} className="flex-1 text-left text-gray-700 truncate cursor-pointer">
                 {d.file_name}

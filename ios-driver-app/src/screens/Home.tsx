@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { cacheGet, cacheSet } from '../lib/cache'
@@ -9,6 +9,8 @@ import type { Driver } from '../hooks/useDriver'
 
 const ACTIVE_STATUSES = ['Assigned', 'In Transit']
 
+type Range = 'week' | 'month'
+
 function startOfWeek(d = new Date()) {
   const day = d.getDay()
   const diff = day === 0 ? -6 : 1 - day
@@ -18,11 +20,20 @@ function startOfWeek(d = new Date()) {
   return monday
 }
 
-function WeekSummary({ driverId }: { driverId: string }) {
+function startOfMonth(d = new Date()) {
+  const x = new Date(d)
+  x.setDate(1)
+  x.setHours(0, 0, 0, 0)
+  return x
+}
+
+function Summary({ driverId }: { driverId: string }) {
+  const [range, setRange] = useState<Range>('week')
+
   const { data } = useQuery({
-    queryKey: ['week-summary', driverId],
+    queryKey: ['driver-summary', driverId, range],
     queryFn: async () => {
-      const since = startOfWeek().toISOString()
+      const since = (range === 'week' ? startOfWeek() : startOfMonth()).toISOString()
       const { data, error } = await supabase.from('loads')
         .select('rate, miles, status')
         .eq('driver_id', driverId)
@@ -38,8 +49,19 @@ function WeekSummary({ driverId }: { driverId: string }) {
   const r = data ?? { revenue: 0, miles: 0, loads: 0, rpm: 0 }
   return (
     <div className="bg-white rounded-2xl p-5">
-      <div className="flex items-baseline justify-between mb-3">
-        <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">This week</h2>
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex gap-1 bg-gray-100 rounded-lg p-0.5">
+          {(['week', 'month'] as Range[]).map(r => {
+            const on = r === range
+            return (
+              <button key={r} onClick={() => setRange(r)}
+                className="px-3 py-1 rounded-md text-[11px] font-semibold uppercase tracking-wide cursor-pointer transition-colors"
+                style={on ? { background: 'white', color: '#c8410a' } : { color: '#6b7280' }}>
+                {r === 'week' ? 'This week' : 'This month'}
+              </button>
+            )
+          })}
+        </div>
         <span className="text-xs text-gray-400">{r.loads} delivered</span>
       </div>
       <div className="grid grid-cols-3 gap-2">
@@ -156,7 +178,7 @@ export function Home({ driver, onGoToLoads }: { driver: Driver; onGoToLoads: () 
         </div>
       )}
 
-      <WeekSummary driverId={driver.id} />
+      <Summary driverId={driver.id} />
 
       <ExpirationsCard driverId={driver.id} />
 
