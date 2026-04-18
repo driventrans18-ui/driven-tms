@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
+import { ScreenHeader } from '../components/ScreenHeader'
 import type { Driver } from '../hooks/useDriver'
 
 interface Truck {
@@ -16,7 +17,6 @@ export function Profile({ driver, email, onOpenBrokers }: {
   const { data: truck } = useQuery({
     queryKey: ['my-truck', driver.id],
     queryFn: async (): Promise<Truck | null> => {
-      // Most recently assigned load's truck is treated as the current assignment.
       const { data, error } = await supabase.from('loads')
         .select('trucks(id, unit_number, make, model, year)')
         .eq('driver_id', driver.id)
@@ -31,66 +31,91 @@ export function Profile({ driver, email, onOpenBrokers }: {
   })
 
   const fullName = [driver.first_name, driver.last_name].filter(Boolean).join(' ') || 'Driver'
+  const initials = [driver.first_name?.[0], driver.last_name?.[0]].filter(Boolean).join('').toUpperCase() || 'D'
 
   async function signOut() {
     await supabase.auth.signOut()
   }
 
   return (
-    <div className="space-y-4">
-      <div className="bg-white rounded-2xl p-5">
-        <div className="flex items-center gap-4">
-          <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-white text-xl font-bold"
-            style={{ background: '#c8410a' }}>
-            {(driver.first_name?.[0] ?? 'D').toUpperCase()}
-          </div>
-          <div>
-            <p className="text-lg font-bold text-gray-900">{fullName}</p>
-            <p className="text-sm text-gray-500">Driven Transportation Inc.</p>
-          </div>
+    <div className="space-y-5 pb-6">
+      <ScreenHeader title="Profile" />
+
+      {/* Large avatar + name + company centered at top. */}
+      <div className="flex flex-col items-center pt-2 pb-2">
+        <div
+          className="w-20 h-20 rounded-full flex items-center justify-center text-white text-2xl font-semibold"
+          style={{ background: '#c8410a' }}
+          aria-hidden
+        >
+          {initials}
         </div>
+        <p className="mt-3 text-lg font-bold text-gray-900">{fullName}</p>
+        <p className="text-sm text-gray-500">Driven Transportation Inc.</p>
       </div>
 
-      <div className="bg-white rounded-2xl divide-y divide-gray-100">
+      <Section title="Personal Info">
         <Row k="Email" v={email ?? driver.email ?? '—'} />
         <Row k="Phone" v={driver.phone ?? '—'} />
-        <Row k="CDL" v={driver.cdl_class ?? '—'} />
-        <Row k="Status" v={driver.status ?? '—'} />
-      </div>
+      </Section>
 
-      <div className="bg-white rounded-2xl p-5">
-        <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">Assigned truck</p>
+      <Section title="License">
+        <Row k="CDL"    v={driver.cdl_class ?? '—'} />
+        <Row k="Status" v={driver.status    ?? '—'} valueColor={driver.status === 'Active' ? '#15803d' : undefined} />
+      </Section>
+
+      <Section title="Assigned Truck">
         {truck ? (
-          <>
-            <p className="text-lg font-bold text-gray-900">{truck.unit_number ?? '—'}</p>
-            <p className="text-sm text-gray-500">
-              {[truck.year, truck.make, truck.model].filter(Boolean).join(' ') || '—'}
-            </p>
-          </>
+          <Row
+            k="Assigned Truck"
+            v={[truck.unit_number, [truck.year, truck.make, truck.model].filter(Boolean).join(' ')]
+                .filter(Boolean).join(' · ') || '—'}
+            chevron
+          />
         ) : (
-          <p className="text-sm text-gray-500">No truck on recent loads.</p>
+          <Row k="Assigned Truck" v="Not assigned" chevron />
         )}
-      </div>
+      </Section>
 
-      <button onClick={onOpenBrokers}
-        className="w-full py-3.5 rounded-xl bg-white text-gray-900 text-base font-semibold active:bg-gray-50 cursor-pointer flex items-center justify-between px-5">
+      <button
+        onClick={onOpenBrokers}
+        className="w-full bg-white rounded-2xl px-5 py-3.5 flex items-center justify-between text-base font-semibold text-gray-900 active:bg-gray-50 cursor-pointer"
+      >
         <span>Brokers</span>
-        <span className="text-gray-300">›</span>
+        <span className="text-gray-300 text-lg">›</span>
       </button>
 
-      <button onClick={signOut}
-        className="w-full py-3.5 rounded-xl bg-white text-red-600 text-base font-semibold active:bg-gray-50 cursor-pointer">
-        Sign out
+      <button
+        onClick={signOut}
+        className="w-full bg-white rounded-2xl py-3.5 text-red-600 text-base font-semibold active:bg-gray-50 cursor-pointer"
+      >
+        Sign Out
       </button>
     </div>
   )
 }
 
-function Row({ k, v }: { k: string; v: string }) {
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-center justify-between px-5 py-3">
-      <span className="text-sm text-gray-500">{k}</span>
-      <span className="text-base text-gray-900 font-medium">{v}</span>
+    <div>
+      <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide px-1 mb-2">{title}</h2>
+      <div className="bg-white rounded-2xl divide-y divide-gray-100">
+        {children}
+      </div>
+    </div>
+  )
+}
+
+function Row({ k, v, valueColor, chevron }: {
+  k: string; v: string; valueColor?: string; chevron?: boolean
+}) {
+  return (
+    <div className="flex items-center justify-between px-5 py-3.5 gap-3">
+      <span className="text-sm text-gray-500 shrink-0">{k}</span>
+      <span className="text-base font-medium text-right truncate" style={{ color: valueColor ?? '#111827' }}>
+        {v}
+      </span>
+      {chevron && <span className="text-gray-300 text-lg shrink-0">›</span>}
     </div>
   )
 }

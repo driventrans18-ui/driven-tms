@@ -7,14 +7,13 @@ import { captureStampedPhoto } from '../lib/stampedCamera'
 import { LoadCard, type LoadCardLoad } from '../components/LoadCard'
 import { RemindersCard } from '../components/RemindersCard'
 import { LoadCalendar } from '../components/LoadCalendar'
+import { ScreenHeader } from '../components/ScreenHeader'
 import type { Driver } from '../hooks/useDriver'
 
 const ACTIVE_STATUSES = ['Assigned', 'In Transit']
 
 type LoadStatus = 'Assigned' | 'In Transit' | 'Delivered'
 const QUICK_STATUSES: LoadStatus[] = ['Assigned', 'In Transit', 'Delivered']
-
-type Range = 'week' | 'month' | 'year'
 
 function startOfWeek(d = new Date()) {
   const day = d.getDay()
@@ -25,33 +24,19 @@ function startOfWeek(d = new Date()) {
   return monday
 }
 
-function startOfMonth(d = new Date()) {
-  const x = new Date(d); x.setDate(1); x.setHours(0, 0, 0, 0); return x
-}
-
-function startOfYear(d = new Date()) {
-  const x = new Date(d.getFullYear(), 0, 1); x.setHours(0, 0, 0, 0); return x
-}
-
-const RANGE_LABEL: Record<Range, string> = { week: 'Week', month: 'Month', year: 'Year' }
-
+// This-week summary — Gross / Net on top row, Expenses / $/mile on bottom.
+// No time-range toggle on Home: driver can drill into Expenses tab for detail.
 function Summary({ driverId }: { driverId: string }) {
-  const [range, setRange] = useState<Range>('week')
-
   const { data } = useQuery({
-    queryKey: ['driver-summary', driverId, range],
+    queryKey: ['driver-summary', driverId, 'week'],
     queryFn: async () => {
-      const since = (range === 'week' ? startOfWeek() : range === 'month' ? startOfMonth() : startOfYear()).toISOString()
+      const since = startOfWeek().toISOString()
       const [loadsRes, expensesRes] = await Promise.all([
         supabase.from('loads')
           .select('rate, miles, deadhead_miles')
           .eq('driver_id', driverId)
           .eq('status', 'Delivered')
           .gte('created_at', since),
-        // Expenses for the same window. Currently expenses aren't tied to a
-        // driver, so we sum everything for the company — close enough for a
-        // solo owner-operator. (Filter by expense_date so the net matches the
-        // earnings window.)
         supabase.from('expenses')
           .select('amount')
           .gte('expense_date', since.slice(0, 10)),
@@ -64,57 +49,33 @@ function Summary({ driverId }: { driverId: string }) {
       const miles   = loads.reduce((s, r) => s + (r.miles ?? 0) + (r.deadhead_miles ?? 0), 0)
       const expenses = exps.reduce((s, r) => s + (r.amount ?? 0), 0)
       const net     = gross - expenses
-      return { gross, expenses, net, miles, loads: loads.length, rpm: miles > 0 ? gross / miles : 0 }
+      return { gross, expenses, net, miles, rpm: miles > 0 ? gross / miles : 0 }
     },
   })
-  const r = data ?? { gross: 0, expenses: 0, net: 0, miles: 0, loads: 0, rpm: 0 }
+  const r = data ?? { gross: 0, expenses: 0, net: 0, miles: 0, rpm: 0 }
   const fmtK = (n: number) => '$' + n.toLocaleString(undefined, { maximumFractionDigits: 0 })
-  return (
-    <div className="bg-white rounded-2xl p-5">
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex gap-1 bg-gray-100 rounded-lg p-0.5">
-          {(['week', 'month', 'year'] as Range[]).map(r => {
-            const on = r === range
-            return (
-              <button key={r} onClick={() => setRange(r)}
-                className="px-3 py-1 rounded-md text-[11px] font-semibold uppercase tracking-wide cursor-pointer transition-colors"
-                style={on ? { background: 'white', color: '#c8410a' } : { color: '#6b7280' }}>
-                {RANGE_LABEL[r]}
-              </button>
-            )
-          })}
-        </div>
-        <span className="text-xs text-gray-400">{r.loads} delivered</span>
-      </div>
 
-      <div className="grid grid-cols-2 gap-3 mb-3">
-        <div>
-          <p className="text-[11px] text-gray-400">Gross</p>
-          <p className="text-2xl font-bold text-gray-900 mt-0.5">{fmtK(r.gross)}</p>
-        </div>
-        <div>
-          <p className="text-[11px] text-gray-400">Net (after expenses)</p>
-          <p className="text-2xl font-bold mt-0.5" style={{ color: r.net >= 0 ? '#16a34a' : '#dc2626' }}>
-            {fmtK(r.net)}
-          </p>
-        </div>
+  return (
+    <div className="bg-white rounded-2xl overflow-hidden">
+      <div className="grid grid-cols-2">
+        <StatCell label="Gross" value={fmtK(r.gross)} />
+        <StatCell label="Net" value={fmtK(r.net)} valueColor={r.net >= 0 ? '#16a34a' : '#dc2626'} />
       </div>
-      <div className="grid grid-cols-3 gap-2 pt-3 border-t border-gray-100">
-        <div>
-          <p className="text-[11px] text-gray-400">Expenses</p>
-          <p className="text-sm font-semibold text-gray-700 mt-0.5">{fmtK(r.expenses)}</p>
-        </div>
-        <div>
-          <p className="text-[11px] text-gray-400">Miles</p>
-          <p className="text-sm font-semibold text-gray-700 mt-0.5">{r.miles.toLocaleString()}</p>
-        </div>
-        <div>
-          <p className="text-[11px] text-gray-400">$/mile</p>
-          <p className="text-sm font-semibold mt-0.5" style={{ color: '#c8410a' }}>
-            {r.miles > 0 ? '$' + r.rpm.toFixed(2) : '—'}
-          </p>
-        </div>
+      <div className="grid grid-cols-2 border-t border-gray-100">
+        <StatCell label="Expenses" value={fmtK(r.expenses)} />
+        <StatCell label="$/mile" value={r.miles > 0 ? '$' + r.rpm.toFixed(2) : '—'} valueColor="#c8410a" />
       </div>
+    </div>
+  )
+}
+
+function StatCell({ label, value, valueColor }: { label: string; value: string; valueColor?: string }) {
+  return (
+    <div className="p-4 first:border-r-0 [&:nth-child(odd)]:border-r border-gray-100">
+      <p className="text-xs text-gray-500">{label}</p>
+      <p className="text-2xl font-bold mt-0.5" style={valueColor ? { color: valueColor } : { color: '#111827' }}>
+        {value}
+      </p>
     </div>
   )
 }
@@ -215,6 +176,10 @@ export function Home({ driver, onGoToLoads, onOpenDriverMode }: {
   return (
     <>
     <div className="space-y-5 pb-6">
+      <ScreenHeader title="Home" />
+
+      <Summary driverId={driver.id} />
+
       {activeLoad ? (
         <div>
           <h2 className="px-1 text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Active load</h2>
@@ -307,8 +272,6 @@ export function Home({ driver, onGoToLoads, onOpenDriverMode }: {
           </button>
         </div>
       </div>
-
-      <Summary driverId={driver.id} />
 
       <RemindersCard driverId={driver.id} />
 

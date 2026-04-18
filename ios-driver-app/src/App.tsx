@@ -9,7 +9,7 @@ import { Expenses } from './screens/Expenses'
 import { Invoices } from './screens/Invoices'
 import { Profile } from './screens/Profile'
 import { DriverMode } from './screens/DriverMode'
-import { TabBar, type TabKey, TABS } from './components/TabBar'
+import { TabBar, type TabKey } from './components/TabBar'
 import { registerPushForUser } from './lib/push'
 
 export function App() {
@@ -67,21 +67,17 @@ function Shell({ tab, setTab, userId, email }: {
     return <ErrorScreen message={`No driver record linked to ${email}. Ask dispatch to add you in the web TMS (Drivers → Add Driver) with this email.`} />
   }
 
-  const label = TABS.find(t => t.key === tab)?.label ?? ''
-
   return (
     // Fixed flex column owns the full viewport. The TabBar is a normal flex
     // child at the bottom rather than position:fixed — that prevents iOS
     // WKWebView from rubber-banding the tab bar along with the page on
-    // overscroll. Only the <main> region scrolls internally.
+    // overscroll. Only the <main> region scrolls internally. Each screen now
+    // renders its own title + optional "+" action in its header row.
     <div
       className="fixed inset-0 flex flex-col bg-[#f2f2f7]"
       style={{ paddingTop: 'env(safe-area-inset-top, 0)' }}
     >
-      <header className="px-4 pt-4 pb-3 shrink-0">
-        <h1 className="text-3xl font-bold text-gray-900">{label}</h1>
-      </header>
-      <main className="flex-1 overflow-y-auto px-4 pb-4">
+      <main className="flex-1 overflow-y-auto px-4 pt-4 pb-4">
         {tab === 'home'     && <Home driver={driver} onGoToLoads={() => setTab('loads')} onOpenDriverMode={() => setDriverModeOpen(true)} />}
         {tab === 'loads'    && <Loads driver={driver} />}
         {tab === 'expenses' && <Expenses />}

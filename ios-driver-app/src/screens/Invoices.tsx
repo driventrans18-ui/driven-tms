@@ -5,6 +5,7 @@ import type { InvoicePdfData } from '../lib/invoicePdf'
 import { shareFile } from '../lib/share'
 import { DocViewer } from '../components/DocViewer'
 import { SwipeRow } from '../components/SwipeRow'
+import { ScreenHeader, PlusButton } from '../components/ScreenHeader'
 import type { Driver } from '../hooks/useDriver'
 
 type InvoiceStatus = 'Draft' | 'Sent' | 'Overdue' | 'Paid'
@@ -72,6 +73,7 @@ export function Invoices({ driver }: { driver: Driver }) {
   const qc = useQueryClient()
   const [openInvoice, setOpenInvoice] = useState<Invoice | null>(null)
   const [form, setForm] = useState<{ editing: Invoice | null } | null>(null)
+  const [tab, setTab] = useState<'outstanding' | 'paid'>('outstanding')
 
   // All invoices tied to this driver's loads, plus any manually-created
   // invoices that aren't attached to a load yet. The left join on loads lets
@@ -146,63 +148,84 @@ export function Invoices({ driver }: { driver: Driver }) {
     return { paid, outstanding }
   }, [invoices])
 
+  const visibleInvoices = invoices.filter(inv =>
+    tab === 'paid' ? inv.status === 'Paid' : inv.status !== 'Paid'
+  )
+
   return (
     <div className="space-y-4">
-      <button
-        onClick={() => setForm({ editing: null })}
-        className="w-full py-3.5 rounded-xl text-white text-base font-semibold cursor-pointer"
-        style={{ background: '#c8410a' }}
-      >
-        + New Invoice
-      </button>
+      <ScreenHeader
+        title="Invoices"
+        action={<PlusButton onClick={() => setForm({ editing: null })} label="New invoice" />}
+      />
 
-      <div className="grid grid-cols-2 gap-3">
-        <div className="bg-white rounded-2xl p-4">
-          <p className="text-[11px] text-gray-500 uppercase tracking-wide">Outstanding</p>
-          <p className="text-2xl font-bold text-gray-900 mt-1">{fmtMoney(totals.outstanding)}</p>
+      {/* Segmented Outstanding / Paid with dollar totals underneath. */}
+      <div className="bg-white rounded-2xl p-3">
+        <div className="grid grid-cols-2 gap-1 bg-gray-100 rounded-xl p-1">
+          {(['outstanding', 'paid'] as const).map(k => {
+            const on = tab === k
+            return (
+              <button key={k} onClick={() => setTab(k)}
+                className="py-2 rounded-lg text-sm font-semibold cursor-pointer transition-colors"
+                style={on ? { background: 'white', color: '#111827' } : { color: '#6b7280' }}>
+                {k === 'outstanding' ? 'Outstanding' : 'Paid'}
+              </button>
+            )
+          })}
         </div>
-        <div className="bg-white rounded-2xl p-4">
-          <p className="text-[11px] text-gray-500 uppercase tracking-wide">Paid</p>
-          <p className="text-2xl font-bold text-green-700 mt-1">{fmtMoney(totals.paid)}</p>
+        <div className="grid grid-cols-2 mt-3 px-2">
+          <p className="text-xl font-bold text-center" style={{ color: tab === 'outstanding' ? '#111827' : '#9ca3af' }}>
+            {fmtMoney(totals.outstanding)}
+          </p>
+          <p className="text-xl font-bold text-center" style={{ color: tab === 'paid' ? '#15803d' : '#9ca3af' }}>
+            {fmtMoney(totals.paid)}
+          </p>
         </div>
       </div>
 
-      {uninvoicedLoads.length > 0 && (
+      {tab === 'outstanding' && (
         <div>
-          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2 px-1">Ready to invoice</p>
-          <ul className="space-y-2">
-            {uninvoicedLoads.map(l => (
-              <li key={l.id} className="bg-white rounded-2xl p-4 flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-sm text-gray-500">{l.load_number || `#${l.id.slice(0, 8)}`}</p>
-                  <p className="text-base font-semibold text-gray-900 truncate">
-                    {[l.origin_city, l.dest_city].filter(Boolean).join(' → ') || '—'}
-                  </p>
-                  <p className="text-xs text-gray-500 mt-0.5">{l.brokers?.name ?? 'No broker'} · {fmtMoney(l.rate)}</p>
-                </div>
-                <button
-                  onClick={() => createInvoice.mutate(l)}
-                  disabled={createInvoice.isPending}
-                  className="py-2 px-3 rounded-lg text-sm font-semibold text-white disabled:opacity-50 cursor-pointer flex-shrink-0"
-                  style={{ background: '#c8410a' }}
-                >
-                  Create
-                </button>
-              </li>
-            ))}
-          </ul>
+          <h2 className="text-base font-semibold text-gray-900 mb-2 px-1">Ready to Invoice</h2>
+          {uninvoicedLoads.length > 0 ? (
+            <ul className="space-y-2">
+              {uninvoicedLoads.map(l => (
+                <li key={l.id} className="bg-white rounded-2xl p-4 flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-base font-semibold text-gray-900 truncate">
+                      {[l.origin_city, l.dest_city].filter(Boolean).join(' → ') || l.load_number || '—'}
+                    </p>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      {l.brokers?.name ?? 'No broker'} · Load visits {fmtMoney(l.rate)}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => createInvoice.mutate(l)}
+                    disabled={createInvoice.isPending}
+                    className="py-2 px-4 rounded-lg text-sm font-semibold text-white disabled:opacity-50 cursor-pointer flex-shrink-0"
+                    style={{ background: '#c8410a' }}
+                  >
+                    Create
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <EmptyInvoicesCard message="No loads ready to invoice." />
+          )}
         </div>
       )}
 
       <div>
-        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2 px-1">Invoices</p>
+        <h2 className="text-base font-semibold text-gray-900 mb-2 px-1">
+          {tab === 'paid' ? 'Paid Invoices' : 'Past Invoices'}
+        </h2>
         {isLoading ? (
-          <p className="text-center text-sm text-gray-400 py-10">Loading…</p>
-        ) : invoices.length === 0 ? (
-          <p className="text-center text-sm text-gray-400 py-10">No invoices yet.</p>
+          <EmptyInvoicesCard message="Loading…" />
+        ) : visibleInvoices.length === 0 ? (
+          <EmptyInvoicesCard message={tab === 'paid' ? 'No paid invoices yet.' : 'No invoices yet.'} />
         ) : (
           <ul className="space-y-2">
-            {invoices.map(inv => {
+            {visibleInvoices.map(inv => {
               const who = inv.customers?.name ?? inv.brokers?.name ?? '—'
               const cls = STATUS_BADGE[inv.status] ?? STATUS_BADGE.Draft
               const label = inv.invoice_number || `#${inv.id.slice(0, 8)}`
@@ -720,6 +743,20 @@ export function InvoiceFormSheet({ driverId, editing, onClose }: {
           {save.isPending ? 'Saving…' : isEdit ? 'Save Changes' : 'Create Invoice'}
         </button>
       </div>
+    </div>
+  )
+}
+
+function EmptyInvoicesCard({ message }: { message: string }) {
+  return (
+    <div className="bg-white rounded-2xl flex flex-col items-center justify-center py-10 gap-3">
+      <div className="w-14 h-14 rounded-full bg-gray-100 flex items-center justify-center" aria-hidden>
+        <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="#9ca3af" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+          <path d="M14 2v6h6" />
+        </svg>
+      </div>
+      <p className="text-sm text-gray-500">{message}</p>
     </div>
   )
 }
