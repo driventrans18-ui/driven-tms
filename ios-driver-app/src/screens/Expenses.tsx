@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
+import { SwipeRow } from '../components/SwipeRow'
 
 const CATEGORIES = ['Fuel', 'Maintenance', 'Tolls', 'Insurance', 'Permits', 'Lumper', 'Other'] as const
 type Category = typeof CATEGORIES[number]
@@ -40,6 +41,7 @@ function todayISO() {
 }
 
 export function Expenses() {
+  const qc = useQueryClient()
   const [catFilter, setCatFilter] = useState<Category | 'All'>('All')
   const [open, setOpen] = useState<{ editing: Expense | null } | null>(null)
 
@@ -51,6 +53,18 @@ export function Expenses() {
       if (error) throw error
       return (data ?? []) as Expense[]
     },
+  })
+
+  const quickDelete = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from('expenses').delete().eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['driver-expenses'] })
+      qc.invalidateQueries({ queryKey: ['driver-summary'] })
+    },
+    onError: (e: Error) => alert(e.message),
   })
 
   const filtered = catFilter === 'All' ? expenses : expenses.filter(e => e.category === catFilter)
@@ -93,19 +107,26 @@ export function Expenses() {
         <ul className="space-y-2">
           {filtered.map(e => {
             const cls = BADGE[e.category ?? 'Other'] ?? BADGE.Other
+            const label = `${e.category ?? 'expense'} ${fmtMoney(e.amount)}`
             return (
               <li key={e.id}>
-                <button onClick={() => setOpen({ editing: e })}
-                  className="w-full text-left bg-white rounded-2xl p-4 active:bg-gray-50 cursor-pointer">
-                  <div className="flex items-center justify-between">
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${cls}`}>{e.category ?? 'Other'}</span>
-                    <span className="text-base font-semibold text-gray-900">{fmtMoney(e.amount)}</span>
-                  </div>
-                  <div className="flex items-center justify-between mt-2 text-sm text-gray-500">
-                    <span className="truncate">{e.vendor ?? '—'}</span>
-                    <span>{fmtDate(e.expense_date)}</span>
-                  </div>
-                </button>
+                <SwipeRow
+                  onDelete={() => {
+                    if (confirm(`Delete ${label}?`)) quickDelete.mutate(e.id)
+                  }}
+                >
+                  <button onClick={() => setOpen({ editing: e })}
+                    className="w-full text-left bg-white rounded-2xl p-4 active:bg-gray-50 cursor-pointer">
+                    <div className="flex items-center justify-between">
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${cls}`}>{e.category ?? 'Other'}</span>
+                      <span className="text-base font-semibold text-gray-900">{fmtMoney(e.amount)}</span>
+                    </div>
+                    <div className="flex items-center justify-between mt-2 text-sm text-gray-500">
+                      <span className="truncate">{e.vendor ?? '—'}</span>
+                      <span>{fmtDate(e.expense_date)}</span>
+                    </div>
+                  </button>
+                </SwipeRow>
               </li>
             )
           })}

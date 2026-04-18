@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { LoadCard, type LoadCardLoad } from '../components/LoadCard'
 import { DocViewer } from '../components/DocViewer'
 import { CityAutocomplete } from '../components/CityAutocomplete'
+import { SwipeRow } from '../components/SwipeRow'
 import { isDocScanAvailable, scanDocument } from '../lib/docScan'
 import { captureStampedPhoto } from '../lib/stampedCamera'
 import { uploadBol } from '../lib/bolDocuments'
@@ -78,6 +79,7 @@ function StarPicker({ value, onChange }: { value: number; onChange: (n: number) 
 }
 
 export function Loads({ driver }: { driver: Driver }) {
+  const qc = useQueryClient()
   const [tab, setTab] = useState<typeof TABS[number]>('All')
   const [open, setOpen] = useState<LoadDetail | null>(null)
   const [newLoadOpen, setNewLoadOpen] = useState(false)
@@ -92,6 +94,19 @@ export function Loads({ driver }: { driver: Driver }) {
       if (error) throw error
       return (data ?? []) as unknown as LoadDetail[]
     },
+  })
+
+  const quickDelete = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from('loads').delete().eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['my-loads', driver.id] })
+      qc.invalidateQueries({ queryKey: ['active-load', driver.id] })
+      qc.invalidateQueries({ queryKey: ['calendar-loads', driver.id] })
+    },
+    onError: (e: Error) => alert(e.message),
   })
 
   const filtered = tab === 'All' ? loads : loads.filter(l => l.status === tab)
@@ -125,7 +140,21 @@ export function Loads({ driver }: { driver: Driver }) {
         <p className="text-center text-sm text-gray-400 py-10">No loads.</p>
       ) : (
         <div className="space-y-3">
-          {filtered.map(l => <LoadCard key={l.id} load={l} onTap={() => setOpen(l)} />)}
+          {filtered.map(l => {
+            const label = l.load_number || `#${l.id.slice(0, 8)}`
+            return (
+              <SwipeRow
+                key={l.id}
+                onDelete={() => {
+                  if (confirm(`Delete load ${label}? This cannot be undone.`)) {
+                    quickDelete.mutate(l.id)
+                  }
+                }}
+              >
+                <LoadCard load={l} onTap={() => setOpen(l)} />
+              </SwipeRow>
+            )
+          })}
         </div>
       )}
 
