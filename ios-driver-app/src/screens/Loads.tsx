@@ -82,7 +82,9 @@ export function Loads({ driver }: { driver: Driver }) {
   const qc = useQueryClient()
   const [tab, setTab] = useState<typeof TABS[number]>('All')
   const [open, setOpen] = useState<LoadDetail | null>(null)
-  const [newLoadOpen, setNewLoadOpen] = useState(false)
+  // `form` is null when closed, { editing: null } for a fresh load, or
+  // { editing: <load> } when swipe-editing a row.
+  const [form, setForm] = useState<{ editing: LoadDetail | null } | null>(null)
 
   const { data: loads = [], isLoading } = useQuery({
     queryKey: ['my-loads', driver.id],
@@ -114,7 +116,7 @@ export function Loads({ driver }: { driver: Driver }) {
   return (
     <div className="space-y-4">
       <button
-        onClick={() => setNewLoadOpen(true)}
+        onClick={() => setForm({ editing: null })}
         className="w-full py-3.5 rounded-xl text-white text-base font-semibold cursor-pointer"
         style={{ background: '#c8410a' }}
       >
@@ -145,6 +147,7 @@ export function Loads({ driver }: { driver: Driver }) {
             return (
               <SwipeRow
                 key={l.id}
+                onEdit={() => setForm({ editing: l })}
                 onDelete={() => {
                   if (confirm(`Delete load ${label}? This cannot be undone.`)) {
                     quickDelete.mutate(l.id)
@@ -159,7 +162,13 @@ export function Loads({ driver }: { driver: Driver }) {
       )}
 
       {open && <LoadSheet load={open} driverId={driver.id} onClose={() => setOpen(null)} />}
-      {newLoadOpen && <NewLoadSheet driverId={driver.id} onClose={() => setNewLoadOpen(false)} />}
+      {form && (
+        <LoadFormSheet
+          driverId={driver.id}
+          editing={form.editing}
+          onClose={() => setForm(null)}
+        />
+      )}
     </div>
   )
 }
@@ -268,25 +277,48 @@ function LoadSheet({ load, driverId, onClose }: { load: LoadDetail; driverId: st
   )
 }
 
-// ── New load sheet ───────────────────────────────────────────────────────────
+// ── Load form sheet (create + edit) ──────────────────────────────────────────
 
-function NewLoadSheet({ driverId, onClose }: { driverId: string; onClose: () => void }) {
+// Turn an ISO timestamp (or null) into the value `<input type="datetime-local">`
+// expects: YYYY-MM-DDTHH:MM in local time.
+function isoToLocalInput(iso: string | null): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  const pad = (n: number) => n.toString().padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+function LoadFormSheet({ driverId, editing, onClose }: {
+  driverId: string
+  editing?: LoadDetail | null
+  onClose: () => void
+}) {
   const qc = useQueryClient()
+  const isEdit = !!editing
   const [form, setForm] = useState({
-    load_number: '',
-    status: 'Assigned' as LoadStatus,
-    origin_city: '', origin_state: '',
-    dest_city: '',   dest_state: '',
-    load_type: 'Dry Van',
-    miles: '', rate: '',
-    deadhead_miles: '',
-    pickup_rating: 0,
-    delivery_rating: 0,
-    pickup_notes: '', delivery_notes: '',
-    shipper_name: '', receiver_name: '',
-    eta: '',
-    pickup_at: '', deliver_by: '',
-    broker_id: '', truck_id: '', trailer_id: '',
+    load_number:   editing?.load_number   ?? '',
+    status:        (editing?.status as LoadStatus) ?? 'Assigned',
+    origin_city:   editing?.origin_city   ?? '',
+    origin_state:  editing?.origin_state  ?? '',
+    dest_city:     editing?.dest_city     ?? '',
+    dest_state:    editing?.dest_state    ?? '',
+    load_type:     editing?.load_type     ?? 'Dry Van',
+    miles:         editing?.miles != null ? String(editing.miles) : '',
+    rate:          editing?.rate  != null ? String(editing.rate)  : '',
+    deadhead_miles: editing?.deadhead_miles != null ? String(editing.deadhead_miles) : '',
+    pickup_rating:   editing?.pickup_rating   ?? 0,
+    delivery_rating: editing?.delivery_rating ?? 0,
+    pickup_notes:   editing?.pickup_notes   ?? '',
+    delivery_notes: editing?.delivery_notes ?? '',
+    shipper_name:   editing?.shipper_name   ?? '',
+    receiver_name:  editing?.receiver_name  ?? '',
+    eta:            editing?.eta ?? '',
+    pickup_at:      isoToLocalInput(editing?.pickup_at ?? null),
+    deliver_by:     isoToLocalInput(editing?.deliver_by ?? null),
+    broker_id:   editing?.brokers?.id  ?? '',
+    truck_id:    '',
+    trailer_id:  editing?.trailers?.id ?? '',
   })
   const [error, setError] = useState<string | null>(null)
   const [quickBrokerOpen, setQuickBrokerOpen] = useState(false)
@@ -346,12 +378,15 @@ function NewLoadSheet({ driverId, onClose }: { driverId: string; onClose: () => 
         trailer_id:   form.trailer_id || null,
         driver_id:    driverId,
       }
-      const { error } = await supabase.from('loads').insert(payload)
+      const { error } = isEdit && editing
+        ? await supabase.from('loads').update(payload).eq('id', editing.id)
+        : await supabase.from('loads').insert(payload)
       if (error) throw error
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['my-loads', driverId] })
       qc.invalidateQueries({ queryKey: ['active-load', driverId] })
+      qc.invalidateQueries({ queryKey: ['calendar-loads', driverId] })
       qc.invalidateQueries({ queryKey: ['dashboard-stats'] })
       onClose()
     },
@@ -367,7 +402,7 @@ function NewLoadSheet({ driverId, onClose }: { driverId: string; onClose: () => 
         <div className="relative bg-white w-full rounded-t-3xl p-6 max-h-[92vh] overflow-y-auto"
           style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 16px) + 16px)' }}>
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-bold text-gray-900">New Load</h2>
+            <h2 className="text-lg font-bold text-gray-900">{isEdit ? 'Edit Load' : 'New Load'}</h2>
             <button onClick={onClose} className="text-gray-400 text-lg cursor-pointer">✕</button>
           </div>
 
@@ -563,7 +598,7 @@ function NewLoadSheet({ driverId, onClose }: { driverId: string; onClose: () => 
             className="w-full mt-5 py-3.5 rounded-xl text-white text-base font-semibold disabled:opacity-50 cursor-pointer"
             style={{ background: '#c8410a' }}
           >
-            {save.isPending ? 'Saving…' : 'Create Load'}
+            {save.isPending ? 'Saving…' : isEdit ? 'Save Changes' : 'Create Load'}
           </button>
         </div>
       </div>

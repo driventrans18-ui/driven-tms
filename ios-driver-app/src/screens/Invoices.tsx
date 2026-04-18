@@ -71,17 +71,23 @@ const STATUS_BADGE: Record<InvoiceStatus, string> = {
 export function Invoices({ driver }: { driver: Driver }) {
   const qc = useQueryClient()
   const [openInvoice, setOpenInvoice] = useState<Invoice | null>(null)
+  const [form, setForm] = useState<{ editing: Invoice | null } | null>(null)
 
-  // All invoices connected to this driver's delivered loads.
+  // All invoices tied to this driver's loads, plus any manually-created
+  // invoices that aren't attached to a load yet. The left join on loads lets
+  // invoices with a null load_id through; we filter by driver_id on any
+  // joined load server-side and ignore orphan rows that join to another
+  // driver's load client-side.
   const { data: invoices = [], isLoading } = useQuery({
     queryKey: ['my-invoices', driver.id],
     queryFn: async () => {
       const { data, error } = await supabase.from('invoices')
-        .select('*, loads!inner(id, load_number, origin_city, origin_state, dest_city, dest_state, miles, driver_id), brokers(id, name, email, phone), customers(id, name, email, phone)')
-        .eq('loads.driver_id', driver.id)
+        .select('*, loads(id, load_number, origin_city, origin_state, dest_city, dest_state, miles, driver_id), brokers(id, name, email, phone), customers(id, name, email, phone)')
+        .or(`load_id.is.null,loads.driver_id.eq.${driver.id}`)
         .order('created_at', { ascending: false })
       if (error) throw error
-      return (data ?? []) as unknown as Invoice[]
+      const rows = (data ?? []) as unknown as (Invoice & { loads: (Invoice['loads'] & { driver_id?: string }) | null })[]
+      return rows.filter(r => !r.loads || r.loads.driver_id === driver.id) as Invoice[]
     },
   })
 
@@ -142,6 +148,14 @@ export function Invoices({ driver }: { driver: Driver }) {
 
   return (
     <div className="space-y-4">
+      <button
+        onClick={() => setForm({ editing: null })}
+        className="w-full py-3.5 rounded-xl text-white text-base font-semibold cursor-pointer"
+        style={{ background: '#c8410a' }}
+      >
+        + New Invoice
+      </button>
+
       <div className="grid grid-cols-2 gap-3">
         <div className="bg-white rounded-2xl p-4">
           <p className="text-[11px] text-gray-500 uppercase tracking-wide">Outstanding</p>
@@ -195,6 +209,7 @@ export function Invoices({ driver }: { driver: Driver }) {
               return (
                 <li key={inv.id}>
                   <SwipeRow
+                    onEdit={() => setForm({ editing: inv })}
                     onDelete={() => {
                       if (confirm(`Delete invoice ${label}? This cannot be undone.`)) {
                         quickDeleteInvoice.mutate(inv.id)
@@ -220,6 +235,9 @@ export function Invoices({ driver }: { driver: Driver }) {
 
       {openInvoice && (
         <InvoiceSheet invoice={openInvoice} driverId={driver.id} onClose={() => setOpenInvoice(null)} />
+      )}
+      {form && (
+        <InvoiceFormSheet driverId={driver.id} editing={form.editing} onClose={() => setForm(null)} />
       )}
     </div>
   )
@@ -481,6 +499,227 @@ function InvoiceSheet({ invoice, driverId, onClose }: {
           onClose={() => setPreview(null)}
         />
       )}
+    </div>
+  )
+}
+
+// ── Invoice create / edit form ───────────────────────────────────────────────
+
+function addDays(iso: string | null, days: number): string {
+  const d = iso ? new Date(iso + 'T00:00:00') : new Date()
+  d.setDate(d.getDate() + days)
+  return d.toISOString().slice(0, 10)
+}
+
+export function InvoiceFormSheet({ driverId, editing, onClose }: {
+  driverId: string
+  editing?: Invoice | null
+  onClose: () => void
+}) {
+  const qc = useQueryClient()
+  const isEdit = !!editing
+  const [form, setForm] = useState({
+    invoice_number: editing?.invoice_number ?? '',
+    amount:         editing?.amount != null ? String(editing.amount) : '',
+    issued_date:    editing?.issued_date ?? new Date().toISOString().slice(0, 10),
+    due_date:       editing?.due_date    ?? addDays(null, 30),
+    paid_date:      editing?.paid_date   ?? '',
+    status:         editing?.status      ?? ('Draft' as InvoiceStatus),
+    notes:          editing?.notes       ?? '',
+    load_id:        editing?.load_id     ?? '',
+    broker_id:      editing?.broker_id   ?? '',
+    customer_id:    editing?.customer_id ?? '',
+  })
+  const [error, setError] = useState<string | null>(null)
+  const set = <K extends keyof typeof form>(k: K, v: typeof form[K]) =>
+    setForm(f => ({ ...f, [k]: v }))
+
+  // Bill-to picker options: brokers + customers. Selecting one clears the other
+  // so we never write both.
+  const { data: brokers = [] } = useQuery({
+    queryKey: ['brokers-simple'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('brokers').select('id, name').order('name')
+      if (error) throw error
+      return (data ?? []) as Array<{ id: string; name: string }>
+    },
+  })
+  const { data: customers = [] } = useQuery({
+    queryKey: ['customers-simple'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('customers').select('id, name').order('name')
+      if (error) throw error
+      return (data ?? []) as Array<{ id: string; name: string }>
+    },
+  })
+  const { data: driverLoads = [] } = useQuery({
+    queryKey: ['driver-loads-for-invoice', driverId],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('loads')
+        .select('id, load_number, origin_city, dest_city, rate, status')
+        .eq('driver_id', driverId)
+        .order('created_at', { ascending: false })
+        .limit(50)
+      if (error) throw error
+      return (data ?? []) as Array<{
+        id: string; load_number: string | null
+        origin_city: string | null; dest_city: string | null
+        rate: number | null; status: string
+      }>
+    },
+  })
+
+  const save = useMutation({
+    mutationFn: async () => {
+      const amount = form.amount ? Number(form.amount) : null
+      if (amount == null || !Number.isFinite(amount) || amount <= 0) {
+        throw new Error('Enter an amount greater than zero.')
+      }
+      const payload = {
+        invoice_number: form.invoice_number || null,
+        amount,
+        issued_date:    form.issued_date || null,
+        due_date:       form.due_date    || null,
+        paid_date:      form.status === 'Paid' ? (form.paid_date || new Date().toISOString().slice(0, 10)) : null,
+        status:         form.status,
+        notes:          form.notes || null,
+        load_id:        form.load_id     || null,
+        broker_id:      form.broker_id   || null,
+        customer_id:    form.customer_id || null,
+      }
+      const { error } = isEdit && editing
+        ? await supabase.from('invoices').update(payload).eq('id', editing.id)
+        : await supabase.from('invoices').insert(payload)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['my-invoices', driverId] })
+      qc.invalidateQueries({ queryKey: ['my-uninvoiced-loads', driverId] })
+      onClose()
+    },
+    onError: (e: Error) => setError(e.message),
+  })
+
+  // When a load is picked, prefill amount from the load's rate if the user
+  // hasn't already entered one.
+  function pickLoad(loadId: string) {
+    set('load_id', loadId)
+    const l = driverLoads.find(x => x.id === loadId)
+    if (l && !form.amount && l.rate != null) set('amount', String(l.rate))
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end" role="dialog" aria-modal="true">
+      <div className="absolute inset-0 bg-black/30" onClick={onClose} />
+      <div
+        className="relative bg-white w-full rounded-t-3xl p-6 max-h-[92vh] overflow-y-auto"
+        style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 16px) + 16px)' }}
+      >
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-bold text-gray-900">{isEdit ? 'Edit Invoice' : 'New Invoice'}</h2>
+          <button onClick={onClose} className="text-gray-400 text-lg cursor-pointer">✕</button>
+        </div>
+
+        <div className="space-y-3">
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Invoice #</label>
+            <input value={form.invoice_number} onChange={e => set('invoice_number', e.target.value)} placeholder="INV-1042"
+              className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-base" />
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-2">Status</label>
+            <div className="grid grid-cols-4 gap-1 bg-gray-100 rounded-xl p-1">
+              {(['Draft', 'Sent', 'Overdue', 'Paid'] as InvoiceStatus[]).map(s => {
+                const on = form.status === s
+                return (
+                  <button key={s} onClick={() => set('status', s)}
+                    className="py-2 rounded-lg text-xs font-medium cursor-pointer"
+                    style={on ? { background: '#c8410a', color: 'white' } : { color: '#6b7280' }}>
+                    {s}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Bill to</label>
+            <select
+              value={form.customer_id || (form.broker_id ? `b:${form.broker_id}` : '')}
+              onChange={e => {
+                const v = e.target.value
+                if (!v) { set('customer_id', ''); set('broker_id', ''); return }
+                if (v.startsWith('b:')) { set('broker_id', v.slice(2)); set('customer_id', '') }
+                else                    { set('customer_id', v);       set('broker_id', '') }
+              }}
+              className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-base">
+              <option value="">— None —</option>
+              {customers.length > 0 && <optgroup label="Customers">
+                {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </optgroup>}
+              {brokers.length > 0 && <optgroup label="Brokers">
+                {brokers.map(b => <option key={b.id} value={`b:${b.id}`}>{b.name}</option>)}
+              </optgroup>}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Attached load (optional)</label>
+            <select value={form.load_id} onChange={e => pickLoad(e.target.value)}
+              className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-base">
+              <option value="">— None —</option>
+              {driverLoads.map(l => (
+                <option key={l.id} value={l.id}>
+                  {(l.load_number || l.id.slice(0, 8)) + ' · ' + [l.origin_city, l.dest_city].filter(Boolean).join(' → ')}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Amount</label>
+            <input type="number" inputMode="decimal" value={form.amount} onChange={e => set('amount', e.target.value)} placeholder="0.00"
+              className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-base" />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Issued</label>
+              <input type="date" value={form.issued_date} onChange={e => set('issued_date', e.target.value)}
+                className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-base" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Due</label>
+              <input type="date" value={form.due_date} onChange={e => set('due_date', e.target.value)}
+                className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-base" />
+            </div>
+          </div>
+
+          {form.status === 'Paid' && (
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Paid on</label>
+              <input type="date" value={form.paid_date} onChange={e => set('paid_date', e.target.value)}
+                className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-base" />
+            </div>
+          )}
+
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Notes</label>
+            <textarea value={form.notes} onChange={e => set('notes', e.target.value)} placeholder="Payment terms, PO #, etc."
+              rows={3}
+              className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-base" />
+          </div>
+        </div>
+
+        {error && <p className="mt-3 text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
+
+        <button onClick={() => save.mutate()} disabled={save.isPending}
+          className="w-full mt-5 py-3.5 rounded-xl text-white text-base font-semibold disabled:opacity-50 cursor-pointer"
+          style={{ background: '#c8410a' }}>
+          {save.isPending ? 'Saving…' : isEdit ? 'Save Changes' : 'Create Invoice'}
+        </button>
+      </div>
     </div>
   )
 }

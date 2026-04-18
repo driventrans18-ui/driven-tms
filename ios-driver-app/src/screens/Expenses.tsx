@@ -111,6 +111,7 @@ export function Expenses() {
             return (
               <li key={e.id}>
                 <SwipeRow
+                  onEdit={() => setOpen({ editing: e })}
                   onDelete={() => {
                     if (confirm(`Delete ${label}?`)) quickDelete.mutate(e.id)
                   }}
