@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { LoadCard, type LoadCardLoad } from '../components/LoadCard'
 import { DocViewer } from '../components/DocViewer'
+import { CityAutocomplete } from '../components/CityAutocomplete'
 import { isDocScanAvailable, scanDocument } from '../lib/docScan'
 import { captureStampedPhoto } from '../lib/stampedCamera'
 import { estimateMiles } from '../lib/estimateMiles'
@@ -24,6 +25,11 @@ interface LoadDetail extends LoadCardLoad {
   created_at: string
   pickup_at: string | null
   deliver_by: string | null
+  deadhead_miles: number | null
+  pickup_rating: number | null
+  pickup_notes: string | null
+  delivery_rating: number | null
+  delivery_notes: string | null
   brokers: { id: string; name: string; phone: string | null } | null
 }
 
@@ -52,6 +58,21 @@ function mapsUrl(parts: Array<string | null>) {
   return `https://maps.apple.com/?daddr=${encodeURIComponent(q)}`
 }
 
+// 5-star picker. Tap the same star twice to clear.
+function StarPicker({ value, onChange }: { value: number; onChange: (n: number) => void }) {
+  return (
+    <div className="flex items-center gap-1">
+      {[1,2,3,4,5].map(n => (
+        <button key={n} type="button" onClick={() => onChange(value === n ? 0 : n)}
+          className="text-2xl leading-none cursor-pointer select-none"
+          style={{ color: n <= value ? '#f59e0b' : '#d1d5db' }}>
+          ★
+        </button>
+      ))}
+    </div>
+  )
+}
+
 export function Loads({ driver }: { driver: Driver }) {
   const [tab, setTab] = useState<typeof TABS[number]>('All')
   const [open, setOpen] = useState<LoadDetail | null>(null)
@@ -61,7 +82,7 @@ export function Loads({ driver }: { driver: Driver }) {
     queryKey: ['my-loads', driver.id],
     queryFn: async () => {
       const { data, error } = await supabase.from('loads')
-        .select('id, load_number, origin_city, origin_state, dest_city, dest_state, rate, miles, status, eta, load_type, created_at, pickup_at, deliver_by, brokers(id, name, phone)')
+        .select('id, load_number, origin_city, origin_state, dest_city, dest_state, rate, miles, status, eta, load_type, created_at, pickup_at, deliver_by, deadhead_miles, pickup_rating, pickup_notes, delivery_rating, delivery_notes, brokers(id, name, phone)')
         .eq('driver_id', driver.id)
         .order('created_at', { ascending: false })
       if (error) throw error
@@ -154,10 +175,18 @@ function LoadSheet({ load, driverId, onClose }: { load: LoadDetail; driverId: st
           <Row k="Broker" v={load.brokers?.name ?? '—'} />
           <Row k="Type" v={load.load_type ?? '—'} />
           <Row k="Miles" v={load.miles != null ? load.miles.toLocaleString() : '—'} />
+          {load.deadhead_miles != null && load.deadhead_miles > 0 && (
+            <>
+              <Row k="Deadhead" v={load.deadhead_miles.toLocaleString()} />
+              <Row k="Total mi" v={((load.miles ?? 0) + load.deadhead_miles).toLocaleString()} />
+            </>
+          )}
           <Row k="Rate" v={load.rate != null ? '$' + load.rate.toLocaleString() : '—'} />
           <Row k="ETA" v={fmtDate(load.eta)} />
           <Row k="Pickup" v={fmtAppt(load.pickup_at)} />
           <Row k="Delivery" v={fmtAppt(load.deliver_by)} />
+          {load.pickup_rating != null && <Row k="Pickup ★" v={`${load.pickup_rating} / 5`} />}
+          {load.delivery_rating != null && <Row k="Delivery ★" v={`${load.delivery_rating} / 5`} />}
         </dl>
 
         <div className="grid grid-cols-2 gap-2 mt-4">
@@ -214,6 +243,10 @@ function NewLoadSheet({ driverId, onClose }: { driverId: string; onClose: () => 
     dest_city: '',   dest_state: '',
     load_type: 'Dry Van',
     miles: '', rate: '',
+    deadhead_miles: '',
+    pickup_rating: 0,
+    delivery_rating: 0,
+    pickup_notes: '', delivery_notes: '',
     eta: '',
     pickup_at: '', deliver_by: '',
     broker_id: '', truck_id: '',
@@ -256,6 +289,11 @@ function NewLoadSheet({ driverId, onClose }: { driverId: string; onClose: () => 
         eta:          form.eta || null,
         pickup_at:    form.pickup_at  ? new Date(form.pickup_at).toISOString()  : null,
         deliver_by:   form.deliver_by ? new Date(form.deliver_by).toISOString() : null,
+        deadhead_miles:  form.deadhead_miles ? Number(form.deadhead_miles) : null,
+        pickup_rating:   form.pickup_rating   > 0 ? form.pickup_rating   : null,
+        pickup_notes:    form.pickup_notes    || null,
+        delivery_rating: form.delivery_rating > 0 ? form.delivery_rating : null,
+        delivery_notes:  form.delivery_notes  || null,
         broker_id:    form.broker_id || null,
         truck_id:     form.truck_id  || null,
         driver_id:    driverId,
@@ -310,22 +348,24 @@ function NewLoadSheet({ driverId, onClose }: { driverId: string; onClose: () => 
 
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Origin</label>
-              <div className="grid grid-cols-[1fr_auto] gap-2">
-                <input value={form.origin_city} onChange={e => set('origin_city', e.target.value)} placeholder="City"
-                  className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-base" />
-                <input value={form.origin_state} onChange={e => set('origin_state', e.target.value.toUpperCase().slice(0, 2))} placeholder="ST"
-                  className="w-16 px-3 py-3 rounded-xl bg-gray-50 border border-gray-200 text-base text-center uppercase" />
-              </div>
+              <CityAutocomplete
+                cityValue={form.origin_city}
+                stateValue={form.origin_state}
+                onTypeCity={v => set('origin_city', v)}
+                onTypeState={v => set('origin_state', v)}
+                onPick={(c, s) => { set('origin_city', c); set('origin_state', s) }}
+              />
             </div>
 
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Destination</label>
-              <div className="grid grid-cols-[1fr_auto] gap-2">
-                <input value={form.dest_city} onChange={e => set('dest_city', e.target.value)} placeholder="City"
-                  className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-base" />
-                <input value={form.dest_state} onChange={e => set('dest_state', e.target.value.toUpperCase().slice(0, 2))} placeholder="ST"
-                  className="w-16 px-3 py-3 rounded-xl bg-gray-50 border border-gray-200 text-base text-center uppercase" />
-              </div>
+              <CityAutocomplete
+                cityValue={form.dest_city}
+                stateValue={form.dest_state}
+                onTypeCity={v => set('dest_city', v)}
+                onTypeState={v => set('dest_state', v)}
+                onPick={(c, s) => { set('dest_city', c); set('dest_state', s) }}
+              />
             </div>
 
             <div>
@@ -401,6 +441,33 @@ function NewLoadSheet({ driverId, onClose }: { driverId: string; onClose: () => 
                 <input type="datetime-local" value={form.deliver_by} onChange={e => set('deliver_by', e.target.value)}
                   className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-base" />
               </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Deadhead miles (empty miles to pickup)</label>
+              <input type="number" inputMode="decimal" value={form.deadhead_miles} onChange={e => set('deadhead_miles', e.target.value)} placeholder="0"
+                className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-base" />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Pickup rating</label>
+                <StarPicker value={form.pickup_rating} onChange={n => set('pickup_rating', n)} />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Delivery rating</label>
+                <StarPicker value={form.delivery_rating} onChange={n => set('delivery_rating', n)} />
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Pickup notes</label>
+              <input value={form.pickup_notes} onChange={e => set('pickup_notes', e.target.value)} placeholder="Shipper notes"
+                className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-base" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Delivery notes</label>
+              <input value={form.delivery_notes} onChange={e => set('delivery_notes', e.target.value)} placeholder="Receiver notes"
+                className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-base" />
             </div>
 
             <div>

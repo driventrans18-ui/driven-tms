@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { AppShell } from '../components/AppShell'
+import { CityAutocomplete } from '../components/CityAutocomplete'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -21,6 +22,11 @@ interface Load {
   eta: string | null
   pickup_at: string | null
   deliver_by: string | null
+  deadhead_miles: number | null
+  pickup_rating: number | null
+  pickup_notes: string | null
+  delivery_rating: number | null
+  delivery_notes: string | null
   broker_id: string | null
   driver_id: string | null
   truck_id: string | null
@@ -90,6 +96,21 @@ function Field({ label, value, onChange, placeholder = '', type = 'text', requir
   )
 }
 
+// 5-star rating picker. Tapping the same star twice clears the rating.
+function StarPicker({ value, onChange }: { value: number; onChange: (n: number) => void }) {
+  return (
+    <div className="flex items-center gap-1">
+      {[1,2,3,4,5].map(n => (
+        <button key={n} type="button" onClick={() => onChange(value === n ? 0 : n)}
+          className="text-xl leading-none cursor-pointer select-none"
+          style={{ color: n <= value ? '#f59e0b' : '#d1d5db' }}>
+          ★
+        </button>
+      ))}
+    </div>
+  )
+}
+
 // ── Load Modal ────────────────────────────────────────────────────────────────
 
 function LoadModal({ onClose, editing }: { onClose: () => void; editing: Load | null }) {
@@ -107,6 +128,11 @@ function LoadModal({ onClose, editing }: { onClose: () => void; editing: Load | 
     eta:          editing?.eta          ?? '',
     pickup_at:    editing?.pickup_at    ? editing.pickup_at.slice(0, 16)   : '',
     deliver_by:   editing?.deliver_by   ? editing.deliver_by.slice(0, 16)  : '',
+    deadhead_miles:   editing?.deadhead_miles != null ? String(editing.deadhead_miles) : '',
+    pickup_rating:    editing?.pickup_rating != null ? String(editing.pickup_rating) : '0',
+    pickup_notes:     editing?.pickup_notes     ?? '',
+    delivery_rating:  editing?.delivery_rating != null ? String(editing.delivery_rating) : '0',
+    delivery_notes:   editing?.delivery_notes   ?? '',
     broker_id:    editing?.broker_id    ?? '',
     driver_id:    editing?.driver_id    ?? '',
     truck_id:     editing?.truck_id     ?? '',
@@ -151,6 +177,11 @@ function LoadModal({ onClose, editing }: { onClose: () => void; editing: Load | 
         eta:          form.eta   || null,
         pickup_at:    form.pickup_at  ? new Date(form.pickup_at).toISOString()  : null,
         deliver_by:   form.deliver_by ? new Date(form.deliver_by).toISOString() : null,
+        deadhead_miles:  form.deadhead_miles ? Number(form.deadhead_miles) : null,
+        pickup_rating:   Number(form.pickup_rating)   > 0 ? Number(form.pickup_rating)   : null,
+        pickup_notes:    form.pickup_notes    || null,
+        delivery_rating: Number(form.delivery_rating) > 0 ? Number(form.delivery_rating) : null,
+        delivery_notes:  form.delivery_notes  || null,
         broker_id:    form.broker_id || null,
         driver_id:    form.driver_id || null,
         truck_id:     form.truck_id  || null,
@@ -192,18 +223,24 @@ function LoadModal({ onClose, editing }: { onClose: () => void; editing: Load | 
 
           <div>
             <p className="text-xs font-medium text-gray-600 mb-1">Origin</p>
-            <div className="grid grid-cols-2 gap-2">
-              <Field label="" value={form.origin_city} onChange={v => set('origin_city', v)} placeholder="City" />
-              <Field label="" value={form.origin_state} onChange={v => set('origin_state', v)} placeholder="ST" />
-            </div>
+            <CityAutocomplete
+              cityValue={form.origin_city}
+              stateValue={form.origin_state}
+              onTypeCity={v => set('origin_city', v)}
+              onTypeState={v => set('origin_state', v)}
+              onPick={(c, s) => { set('origin_city', c); set('origin_state', s) }}
+            />
           </div>
 
           <div>
             <p className="text-xs font-medium text-gray-600 mb-1">Destination</p>
-            <div className="grid grid-cols-2 gap-2">
-              <Field label="" value={form.dest_city} onChange={v => set('dest_city', v)} placeholder="City" />
-              <Field label="" value={form.dest_state} onChange={v => set('dest_state', v)} placeholder="ST" />
-            </div>
+            <CityAutocomplete
+              cityValue={form.dest_city}
+              stateValue={form.dest_state}
+              onTypeCity={v => set('dest_city', v)}
+              onTypeState={v => set('dest_state', v)}
+              onPick={(c, s) => { set('dest_city', c); set('dest_state', s) }}
+            />
           </div>
 
           <div className="grid grid-cols-3 gap-3">
@@ -247,6 +284,26 @@ function LoadModal({ onClose, editing }: { onClose: () => void; editing: Load | 
             </div>
             <Field label="Miles" value={form.miles} onChange={v => set('miles', v)} placeholder="0" type="number" />
             <Field label="Rate ($)" value={form.rate} onChange={v => set('rate', v)} placeholder="0.00" type="number" />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Deadhead miles" value={form.deadhead_miles} onChange={v => set('deadhead_miles', v)} placeholder="0" type="number" />
+            <div />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Pickup rating</label>
+              <StarPicker value={Number(form.pickup_rating)} onChange={n => set('pickup_rating', String(n))} />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Delivery rating</label>
+              <StarPicker value={Number(form.delivery_rating)} onChange={n => set('delivery_rating', String(n))} />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Pickup notes" value={form.pickup_notes} onChange={v => set('pickup_notes', v)} placeholder="Shipper notes" />
+            <Field label="Delivery notes" value={form.delivery_notes} onChange={v => set('delivery_notes', v)} placeholder="Receiver notes" />
           </div>
 
           <Field label="ETA" value={form.eta} onChange={v => set('eta', v)} type="date" />
@@ -462,7 +519,11 @@ function DetailPanel({ load, onClose, onEdit, onDelete, deleting }: {
                 ['Pickup',   fmtAppt(load.pickup_at)],
                 ['Delivery', fmtAppt(load.deliver_by)],
                 ['Miles',    fmt(load.miles)],
+                ['Deadhead', fmt(load.deadhead_miles)],
+                ['Total mi', fmt((load.miles ?? 0) + (load.deadhead_miles ?? 0))],
                 ['Rate',     fmt(load.rate, '$')],
+                ['Pickup ★', load.pickup_rating != null ? `${load.pickup_rating} / 5` : null],
+                ['Delivery ★', load.delivery_rating != null ? `${load.delivery_rating} / 5` : null],
               ].map(([label, value]) => (
                 <div key={label as string}>
                   <dt className="text-xs text-gray-400">{label}</dt>

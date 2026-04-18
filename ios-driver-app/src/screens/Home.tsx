@@ -9,7 +9,7 @@ import type { Driver } from '../hooks/useDriver'
 
 const ACTIVE_STATUSES = ['Assigned', 'In Transit']
 
-type Range = 'week' | 'month'
+type Range = 'week' | 'month' | 'year'
 
 function startOfWeek(d = new Date()) {
   const day = d.getDay()
@@ -21,11 +21,14 @@ function startOfWeek(d = new Date()) {
 }
 
 function startOfMonth(d = new Date()) {
-  const x = new Date(d)
-  x.setDate(1)
-  x.setHours(0, 0, 0, 0)
-  return x
+  const x = new Date(d); x.setDate(1); x.setHours(0, 0, 0, 0); return x
 }
+
+function startOfYear(d = new Date()) {
+  const x = new Date(d.getFullYear(), 0, 1); x.setHours(0, 0, 0, 0); return x
+}
+
+const RANGE_LABEL: Record<Range, string> = { week: 'Week', month: 'Month', year: 'Year' }
 
 function Summary({ driverId }: { driverId: string }) {
   const [range, setRange] = useState<Range>('week')
@@ -33,16 +36,16 @@ function Summary({ driverId }: { driverId: string }) {
   const { data } = useQuery({
     queryKey: ['driver-summary', driverId, range],
     queryFn: async () => {
-      const since = (range === 'week' ? startOfWeek() : startOfMonth()).toISOString()
+      const since = (range === 'week' ? startOfWeek() : range === 'month' ? startOfMonth() : startOfYear()).toISOString()
       const { data, error } = await supabase.from('loads')
-        .select('rate, miles, status')
+        .select('rate, miles, deadhead_miles, status')
         .eq('driver_id', driverId)
         .eq('status', 'Delivered')
         .gte('created_at', since)
       if (error) throw error
-      const rows = (data ?? []) as Array<{ rate: number | null; miles: number | null }>
+      const rows = (data ?? []) as Array<{ rate: number | null; miles: number | null; deadhead_miles: number | null }>
       const revenue = rows.reduce((s, r) => s + (r.rate ?? 0), 0)
-      const miles   = rows.reduce((s, r) => s + (r.miles ?? 0), 0)
+      const miles   = rows.reduce((s, r) => s + (r.miles ?? 0) + (r.deadhead_miles ?? 0), 0)
       return { revenue, miles, loads: rows.length, rpm: miles > 0 ? revenue / miles : 0 }
     },
   })
@@ -51,13 +54,13 @@ function Summary({ driverId }: { driverId: string }) {
     <div className="bg-white rounded-2xl p-5">
       <div className="flex items-center justify-between mb-3">
         <div className="flex gap-1 bg-gray-100 rounded-lg p-0.5">
-          {(['week', 'month'] as Range[]).map(r => {
+          {(['week', 'month', 'year'] as Range[]).map(r => {
             const on = r === range
             return (
               <button key={r} onClick={() => setRange(r)}
                 className="px-3 py-1 rounded-md text-[11px] font-semibold uppercase tracking-wide cursor-pointer transition-colors"
                 style={on ? { background: 'white', color: '#c8410a' } : { color: '#6b7280' }}>
-                {r === 'week' ? 'This week' : 'This month'}
+                {RANGE_LABEL[r]}
               </button>
             )
           })}
