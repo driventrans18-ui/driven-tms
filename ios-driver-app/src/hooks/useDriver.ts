@@ -10,6 +10,7 @@ export interface Driver {
   cdl_class: string | null
   status: string | null
   user_id: string | null
+  photo_path: string | null
 }
 
 // Looks up the driver record linked to the signed-in auth user.
