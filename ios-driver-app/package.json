@@ -14,6 +14,7 @@
     "@capacitor/app": "^6.0.1",
     "@capacitor/camera": "^6.0.2",
     "@capacitor/core": "^6.1.2",
+    "@capacitor/filesystem": "^6.0.4",
     "@capacitor/geolocation": "^6.0.1",
     "@capacitor/haptics": "^6.0.3",
     "@capacitor/ios": "^6.1.2",

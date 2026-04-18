@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
+import { captureBol, uploadBol } from '../lib/bolDocuments'
 import {
   Button, InlineError, impactMedium, impactHeavy, notifySuccess, notifyError,
 } from '../components/ui'
@@ -80,39 +81,33 @@ export function DriverMode({ driver, onExit }: { driver: Driver; onExit: () => v
     onError:   (e: Error) => { setError(`Check-in failed: ${e.message}`); void notifyError() },
   })
 
+  const loadRef = load ? (load.load_number || load.id.slice(0, 8)) : ''
+
   const capturePod = useMutation({
     mutationFn: async () => {
       if (!load) throw new Error('No active load')
-      const { Camera, CameraResultType, CameraSource } = await import('@capacitor/camera')
-      const photo = await Camera.getPhoto({
-        resultType: CameraResultType.Base64,
-        source: CameraSource.Camera,
-        quality: 80,
-      })
-      if (!photo.base64String) throw new Error('No photo captured')
-      const fmt = photo.format ?? 'jpg'
-      const fileName = `pod-${Date.now()}.${fmt}`
-      const path = `${load.id}/${crypto.randomUUID()}-${fileName}`
-      const bytes = Uint8Array.from(atob(photo.base64String), c => c.charCodeAt(0))
-      const blob = new Blob([bytes], { type: `image/${fmt}` })
-      const { error: upErr } = await supabase.storage.from('load-documents')
-        .upload(path, blob, { contentType: `image/${fmt}` })
-      if (upErr) throw upErr
-      const { error: dbErr } = await supabase.from('load_documents').insert({
-        load_id: load.id,
-        kind: 'pod',
-        storage_path: path,
-        file_name: fileName,
-        mime_type: `image/${fmt}`,
-        file_size: blob.size,
-      })
-      if (dbErr) throw dbErr
+      const { blob, filename, mimeType } = await captureBol()
+      await uploadBol({ loadId: load.id, loadRef, blob, filename, mimeType })
     },
     onSuccess: () => { void notifySuccess() },
     onError:   (e: Error) => {
       if (e.message.toLowerCase().includes('cancel')) return
       setError(`POD upload failed: ${e.message}`); void notifyError()
     },
+  })
+
+  const pickFromFiles = useMutation({
+    mutationFn: async (file: File) => {
+      if (!load) throw new Error('No active load')
+      await uploadBol({
+        loadId: load.id, loadRef,
+        blob: file,
+        filename: file.name,
+        mimeType: file.type || 'application/octet-stream',
+      })
+    },
+    onSuccess: () => { void notifySuccess() },
+    onError:   (e: Error) => { setError(`Upload failed: ${e.message}`); void notifyError() },
   })
 
   const markDelivered = useMutation({
@@ -191,6 +186,8 @@ export function DriverMode({ driver, onExit }: { driver: Driver; onExit: () => v
               onCall={callBroker}
               onCapturePod={() => capturePod.mutate()}
               podBusy={capturePod.isPending}
+              onPickFile={(f) => pickFromFiles.mutate(f)}
+              pickBusy={pickFromFiles.isPending}
               onCheckIn={() => checkIn.mutate()}
               checkInBusy={checkIn.isPending}
               onMarkDelivered={() => markDelivered.mutate()}
@@ -267,6 +264,7 @@ function NextStopCard({
 function ActionGrid({
   canCall, brokerName,
   onCall, onCapturePod, podBusy,
+  onPickFile, pickBusy,
   onCheckIn, checkInBusy,
   onMarkDelivered, deliveredBusy, deliveredDisabled,
 }: {
@@ -274,6 +272,7 @@ function ActionGrid({
   brokerName: string | null
   onCall: () => void
   onCapturePod: () => void; podBusy: boolean
+  onPickFile: (f: File) => void; pickBusy: boolean
   onCheckIn: () => void; checkInBusy: boolean
   onMarkDelivered: () => void; deliveredBusy: boolean; deliveredDisabled: boolean
 }) {
@@ -293,6 +292,10 @@ function ActionGrid({
         onClick={onCapturePod}
         disabled={podBusy}
       />
+      <FilePickAction
+        busy={pickBusy}
+        onPick={onPickFile}
+      />
       <BigAction
         label={checkInBusy ? 'Pinging…' : 'Check-in'}
         sublabel="GPS"
@@ -307,13 +310,46 @@ function ActionGrid({
         variant="success"
         onClick={onMarkDelivered}
         disabled={deliveredBusy || deliveredDisabled}
+        className="col-span-2"
       />
     </section>
   )
 }
 
+function FilePickAction({ busy, onPick }: { busy: boolean; onPick: (f: File) => void }) {
+  const id = 'driver-mode-bol-files'
+  const label = busy ? 'Uploading…' : 'Upload BOL'
+  return (
+    <>
+      <input
+        id={id}
+        type="file"
+        accept="image/*,application/pdf"
+        className="hidden"
+        disabled={busy}
+        onChange={e => {
+          const f = e.target.files?.[0]
+          e.target.value = ''
+          if (f) { void impactMedium(); onPick(f) }
+        }}
+      />
+      <label
+        htmlFor={id}
+        aria-label={label}
+        className={`bg-surface-card text-text-primary border border-border-subtle active:bg-surface-muted min-h-24 rounded-lg px-4 py-4 flex flex-col justify-between shadow-1 ${busy ? 'opacity-40 pointer-events-none' : 'cursor-pointer'}`}
+      >
+        <div className="text-brand-500"><FolderIcon /></div>
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-widest text-text-tertiary">Files</p>
+          <p className="text-lg font-bold leading-tight">{label}</p>
+        </div>
+      </label>
+    </>
+  )
+}
+
 function BigAction({
-  label, sublabel, icon, onClick, disabled, variant = 'default',
+  label, sublabel, icon, onClick, disabled, variant = 'default', className = '',
 }: {
   label: string
   sublabel?: string
@@ -321,6 +357,7 @@ function BigAction({
   onClick: () => void
   disabled?: boolean
   variant?: 'default' | 'success'
+  className?: string
 }) {
   const surface = variant === 'success'
     ? 'bg-success-500 text-text-on-brand active:bg-success-500/90'
@@ -331,7 +368,7 @@ function BigAction({
       onClick={() => { if (!disabled) { void impactMedium(); onClick() } }}
       disabled={disabled}
       aria-label={label}
-      className={`${surface} min-h-24 rounded-lg px-4 py-4 text-left flex flex-col justify-between disabled:opacity-40 shadow-1`}
+      className={`${surface} min-h-24 rounded-lg px-4 py-4 text-left flex flex-col justify-between disabled:opacity-40 shadow-1 ${className}`}
     >
       <div className={variant === 'success' ? 'text-text-on-brand' : 'text-brand-500'}>{icon}</div>
       <div>
@@ -396,6 +433,15 @@ function CheckIcon() {
   return (
     <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
       <path d="M5 13l5 5L20 7" />
+    </svg>
+  )
+}
+function FolderIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M3 7a2 2 0 0 1 2-2h4l2 3h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+      <path d="M12 12v5" />
+      <path d="M10 14l2-2 2 2" />
     </svg>
   )
 }

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { cacheGet, cacheSet } from '../lib/cache'
+import { captureBol, uploadBol } from '../lib/bolDocuments'
 import { LoadCard, type LoadCardLoad } from '../components/LoadCard'
 import { ExpirationsCard } from '../components/ExpirationsCard'
 import { LoadCalendar } from '../components/LoadCalendar'
@@ -168,33 +169,30 @@ export function Home({ driver, onGoToLoads, onOpenDriverMode }: {
   const capturePod = useMutation({
     mutationFn: async () => {
       if (!activeLoad) throw new Error('No active load')
-      const { Camera, CameraResultType, CameraSource } = await import('@capacitor/camera')
-      const photo = await Camera.getPhoto({
-        resultType: CameraResultType.Base64,
-        source: CameraSource.Camera,
-        quality: 80,
+      const { blob, filename, mimeType } = await captureBol()
+      await uploadBol({
+        loadId:  activeLoad.id,
+        loadRef: activeLoad.load_number || activeLoad.id.slice(0, 8),
+        blob, filename, mimeType,
       })
-      if (!photo.base64String) throw new Error('No photo captured')
-      const fileName = `pod-${Date.now()}.${photo.format ?? 'jpg'}`
-      const path = `${activeLoad.id}/${crypto.randomUUID()}-${fileName}`
-      const bytes = Uint8Array.from(atob(photo.base64String), c => c.charCodeAt(0))
-      const blob = new Blob([bytes], { type: `image/${photo.format ?? 'jpeg'}` })
-      const { error: upErr } = await supabase.storage.from('load-documents').upload(path, blob, {
-        contentType: `image/${photo.format ?? 'jpeg'}`,
-      })
-      if (upErr) throw upErr
-      const { error: dbErr } = await supabase.from('load_documents').insert({
-        load_id: activeLoad.id,
-        kind: 'pod',
-        storage_path: path,
-        file_name: fileName,
-        mime_type: `image/${photo.format ?? 'jpeg'}`,
-        file_size: blob.size,
-      })
-      if (dbErr) throw dbErr
     },
     onError: (e: Error) => alert('POD failed: ' + e.message),
-    onSuccess: () => alert('POD uploaded.'),
+    onSuccess: () => alert('POD uploaded and saved to Files.'),
+  })
+
+  const pickFromFiles = useMutation({
+    mutationFn: async (file: File) => {
+      if (!activeLoad) throw new Error('No active load')
+      await uploadBol({
+        loadId:  activeLoad.id,
+        loadRef: activeLoad.load_number || activeLoad.id.slice(0, 8),
+        blob:     file,
+        filename: file.name,
+        mimeType: file.type || 'application/octet-stream',
+      })
+    },
+    onError: (e: Error) => alert('Upload failed: ' + e.message),
+    onSuccess: () => alert('Document uploaded.'),
   })
 
   return (
@@ -236,7 +234,7 @@ export function Home({ driver, onGoToLoads, onOpenDriverMode }: {
       role="toolbar"
       aria-label="Quick actions"
     >
-      <div className="grid grid-cols-3 gap-2 pb-2">
+      <div className="grid grid-cols-4 gap-2 pb-2">
         <button onClick={() => capturePod.mutate()} disabled={!activeLoad || capturePod.isPending}
           className="bg-white rounded-xl border border-gray-100 py-2.5 text-center active:bg-gray-50 disabled:opacity-40 cursor-pointer">
           <span className="block text-xl leading-none">📷</span>
@@ -244,6 +242,30 @@ export function Home({ driver, onGoToLoads, onOpenDriverMode }: {
             {capturePod.isPending ? 'Uploading…' : 'Capture POD'}
           </span>
         </button>
+
+        <label
+          htmlFor="bol-files-picker"
+          aria-disabled={!activeLoad || pickFromFiles.isPending || undefined}
+          className={`bg-white rounded-xl border border-gray-100 py-2.5 text-center active:bg-gray-50 cursor-pointer ${(!activeLoad || pickFromFiles.isPending) ? 'opacity-40 pointer-events-none' : ''}`}
+        >
+          <span className="block text-xl leading-none">📁</span>
+          <span className="block text-[11px] font-medium text-gray-700 mt-0.5">
+            {pickFromFiles.isPending ? 'Uploading…' : 'From Files'}
+          </span>
+        </label>
+        <input
+          id="bol-files-picker"
+          type="file"
+          accept="image/*,application/pdf"
+          className="hidden"
+          disabled={!activeLoad || pickFromFiles.isPending}
+          onChange={e => {
+            const f = e.target.files?.[0]
+            e.target.value = ''
+            if (f) pickFromFiles.mutate(f)
+          }}
+        />
+
         <button onClick={() => checkIn.mutate()} disabled={checkIn.isPending}
           className="bg-white rounded-xl border border-gray-100 py-2.5 text-center active:bg-gray-50 disabled:opacity-40 cursor-pointer">
           <span className="block text-xl leading-none">📍</span>
