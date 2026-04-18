@@ -130,7 +130,7 @@ function AddPicker({ onClose, onPick }: {
           <div>
             <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Company</p>
             <button onClick={() => onPick({ entity_type: 'company', entity_id: null })}
-              className="w-full text-left px-3 py-2 rounded-lg border border-gray-200 hover:border-[#c8410a] hover:bg-[#c8410a]/5 text-sm cursor-pointer">
+              className="w-full text-left px-3 py-2 rounded-lg border border-gray-200 hover:border-[var(--color-brand-500)] hover:bg-[var(--color-brand-500)]/5 text-sm cursor-pointer">
               Company-level item (insurance, UCR, IFTA decal…)
             </button>
           </div>
@@ -139,7 +139,7 @@ function AddPicker({ onClose, onPick }: {
             <div className="max-h-40 overflow-y-auto space-y-1">
               {(drivers.data ?? []).map(d => (
                 <button key={d.id} onClick={() => onPick({ entity_type: 'driver', entity_id: String(d.id) })}
-                  className="w-full text-left px-3 py-2 rounded-lg border border-gray-200 hover:border-[#c8410a] hover:bg-[#c8410a]/5 text-sm cursor-pointer">
+                  className="w-full text-left px-3 py-2 rounded-lg border border-gray-200 hover:border-[var(--color-brand-500)] hover:bg-[var(--color-brand-500)]/5 text-sm cursor-pointer">
                   {[d.first_name, d.last_name].filter(Boolean).join(' ') || '—'}
                 </button>
               ))}
@@ -151,7 +151,7 @@ function AddPicker({ onClose, onPick }: {
             <div className="max-h-40 overflow-y-auto space-y-1">
               {(trucks.data ?? []).map(t => (
                 <button key={String(t.id)} onClick={() => onPick({ entity_type: 'truck', entity_id: String(t.id) })}
-                  className="w-full text-left px-3 py-2 rounded-lg border border-gray-200 hover:border-[#c8410a] hover:bg-[#c8410a]/5 text-sm cursor-pointer">
+                  className="w-full text-left px-3 py-2 rounded-lg border border-gray-200 hover:border-[var(--color-brand-500)] hover:bg-[var(--color-brand-500)]/5 text-sm cursor-pointer">
                   {t.unit_number ?? '—'}
                 </button>
               ))}
@@ -237,7 +237,7 @@ export function Compliance() {
           <p className="text-sm text-gray-400 mt-0.5">{items.length} tracked</p>
         </div>
         <button onClick={() => setPicker(true)}
-          className="flex items-center gap-1.5 px-3.5 py-2 text-sm font-medium text-white rounded-lg cursor-pointer" style={{ background: '#c8410a' }}>
+          className="flex items-center gap-1.5 px-3.5 py-2 text-sm font-medium text-white rounded-lg cursor-pointer" style={{ background: 'var(--color-brand-500)' }}>
           <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
           Add Item
         </button>

@@ -63,7 +63,7 @@ function Summary({ driverId }: { driverId: string }) {
       </div>
       <div className="grid grid-cols-2 border-t border-gray-100">
         <StatCell label="Expenses" value={fmtK(r.expenses)} />
-        <StatCell label="$/mile" value={r.miles > 0 ? '$' + r.rpm.toFixed(2) : '—'} valueColor="#c8410a" />
+        <StatCell label="$/mile" value={r.miles > 0 ? '$' + r.rpm.toFixed(2) : '—'} valueColor="var(--color-brand-500)" />
       </div>
     </div>
   )
@@ -198,7 +198,7 @@ export function Home({ driver, onGoToLoads, onOpenDriverMode }: {
                   onClick={() => !on && setStatus.mutate({ loadId: activeLoad.id, status: s })}
                   disabled={setStatus.isPending}
                   className="py-2 rounded-lg text-xs font-semibold cursor-pointer disabled:opacity-60"
-                  style={on ? { background: '#c8410a', color: 'white' } : { color: '#6b7280' }}
+                  style={on ? { background: 'var(--color-brand-500)', color: 'white' } : { color: '#6b7280' }}
                 >
                   {pending ? 'Saving…' : s}
                 </button>
@@ -210,7 +210,7 @@ export function Home({ driver, onGoToLoads, onOpenDriverMode }: {
             type="button"
             onClick={onOpenDriverMode}
             aria-label="Open Driver Mode"
-            className="mt-2 w-full min-h-14 rounded-2xl bg-[#c8410a] text-white text-base font-semibold active:opacity-90 cursor-pointer flex items-center justify-center gap-2"
+            className="mt-2 w-full min-h-14 rounded-2xl bg-[var(--color-brand-500)] text-white text-base font-semibold active:opacity-90 cursor-pointer flex items-center justify-center gap-2"
           >
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
               <path d="M3 11l18-8-8 18-2-8-8-2z" />
@@ -519,7 +519,7 @@ function AddFuelSheet({ loadId, onClose }: { loadId: string | null; onClose: () 
           onClick={() => save.mutate()}
           disabled={save.isPending}
           className="w-full mt-5 py-3.5 rounded-xl text-white text-base font-semibold disabled:opacity-50 cursor-pointer"
-          style={{ background: '#c8410a' }}
+          style={{ background: 'var(--color-brand-500)' }}
         >
           {save.isPending ? 'Saving…' : 'Save Fuel Entry'}
         </button>

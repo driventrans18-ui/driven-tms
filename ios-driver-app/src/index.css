@@ -1,85 +1,165 @@
 @import "tailwindcss";
 
 @theme {
-  /* Brand */
-  --color-brand-500: #c8410a;
-  --color-brand-600: #a5340a;
-  --color-brand-100: #fbe9df;
-  --color-brand-ink: #ffffff;
+  /* Brand — deepsea palette. #00A8E8 is the single accent (iOS-style blue
+     applied sparingly); #007EA7 is the pressed/hover state; #003459 is the
+     muted secondary used for dark surfaces. */
+  --color-brand-500: #00A8E8;
+  --color-brand-600: #007EA7;
+  --color-brand-100: #D6EEF9;
+  --color-brand-ink:  #FFFFFF;
 
-  /* Surfaces */
-  --color-surface-bg: #f2f2f7;
-  --color-surface-card: #ffffff;
-  --color-surface-elevated: #ffffff;
-  --color-surface-muted: #eceef2;
+  /* Surfaces — neutral-cool so the blue accent reads cleanly. */
+  --color-surface-bg:       #F4F6F8;
+  --color-surface-card:     #FFFFFF;
+  --color-surface-elevated: #FFFFFF;
+  --color-surface-muted:    #EAEEF2;
 
   /* Borders */
-  --color-border-subtle: #e5e7eb;
-  --color-border-strong: #d1d5db;
+  --color-border-subtle: #E5E9EE;
+  --color-border-strong: #D4D9E0;
 
-  /* Text */
-  --color-text-primary: #111418;
-  --color-text-secondary: #4b5058;
-  --color-text-tertiary: #8a8f98;
-  --color-text-on-brand: #ffffff;
+  /* Text — uses the palette's deepest color as primary ink so light & dark
+     share a coherent character. */
+  --color-text-primary:   #00171F;
+  --color-text-secondary: #475569;
+  --color-text-tertiary:  #8896A8;
+  --color-text-on-brand:  #FFFFFF;
 
   /* Semantic */
   --color-success-500: #15803d;
   --color-success-100: #dcfce7;
   --color-warning-500: #b45309;
   --color-warning-100: #fef3c7;
-  --color-danger-500: #b91c1c;
-  --color-danger-100: #fee2e2;
-  --color-info-500: #1d4ed8;
-  --color-info-100: #dbeafe;
+  --color-danger-500:  #b91c1c;
+  --color-danger-100:  #fee2e2;
+  --color-info-500:    #1d4ed8;
+  --color-info-100:    #dbeafe;
 
-  /* Radii */
+  /* Radii / Shadows / Motion / Font stack */
   --radius-sm: 6px;
   --radius-md: 10px;
   --radius-lg: 14px;
   --radius-xl: 18px;
-
-  /* Shadows */
   --shadow-1: 0 1px 2px rgba(17,20,24,0.04), 0 1px 3px rgba(17,20,24,0.06);
   --shadow-2: 0 4px 12px rgba(17,20,24,0.08);
   --shadow-3: 0 16px 40px rgba(17,20,24,0.16);
-
-  /* Motion */
   --ease-standard: cubic-bezier(0.2, 0, 0, 1);
-
-  /* Font stack — SF Pro first, resolves natively on iOS WKWebView */
   --font-sans:
     -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro",
     "Inter", "Inter Variable", system-ui, "Helvetica Neue", sans-serif;
 }
 
+/* ── Dark mode ──────────────────────────────────────────────────────────────
+   Applied two ways: the explicit [data-theme="dark"] attribute (set by the
+   Settings toggle) AND @media (prefers-color-scheme: dark) for the system
+   theme option. [data-theme="light"] forces light even if the OS is dark. */
+
 :root[data-theme="dark"] {
-  --color-surface-bg: #0c0d10;
-  --color-surface-card: #16181c;
-  --color-surface-elevated: #1c1f24;
-  --color-surface-muted: #1c1f24;
-  --color-border-subtle: #262a31;
-  --color-border-strong: #2f333b;
-  --color-text-primary: #f3f4f6;
-  --color-text-secondary: #c7ccd4;
-  --color-text-tertiary: #8b909a;
-  --color-success-100: rgba(21, 128, 61, 0.18);
-  --color-warning-100: rgba(180, 83, 9, 0.20);
-  --color-danger-100: rgba(185, 28, 28, 0.22);
-  --color-info-100: rgba(29, 78, 216, 0.22);
+  color-scheme: dark;
+  --color-surface-bg:       #00171F;
+  --color-surface-card:     #0A2633;
+  --color-surface-elevated: #0F3146;
+  --color-surface-muted:    #0A2633;
+  --color-border-subtle:    #123046;
+  --color-border-strong:    #1A4461;
+  --color-text-primary:     #F1F5F9;
+  --color-text-secondary:   #B6C5D1;
+  --color-text-tertiary:    #7E8CA1;
+  --color-success-100: rgba(21, 128, 61, 0.20);
+  --color-warning-100: rgba(180, 83, 9, 0.22);
+  --color-danger-100:  rgba(185, 28, 28, 0.22);
+  --color-info-100:    rgba(29, 78, 216, 0.22);
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --color-surface-bg: #0c0d10;
-    --color-surface-card: #16181c;
-    --color-surface-elevated: #1c1f24;
-    --color-surface-muted: #1c1f24;
-    --color-border-subtle: #262a31;
-    --color-border-strong: #2f333b;
-    --color-text-primary: #f3f4f6;
-    --color-text-secondary: #c7ccd4;
-    --color-text-tertiary: #8b909a;
+    color-scheme: dark;
+    --color-surface-bg:       #00171F;
+    --color-surface-card:     #0A2633;
+    --color-surface-elevated: #0F3146;
+    --color-surface-muted:    #0A2633;
+    --color-border-subtle:    #123046;
+    --color-border-strong:    #1A4461;
+    --color-text-primary:     #F1F5F9;
+    --color-text-secondary:   #B6C5D1;
+    --color-text-tertiary:    #7E8CA1;
+    --color-success-100: rgba(21, 128, 61, 0.20);
+    --color-warning-100: rgba(180, 83, 9, 0.22);
+    --color-danger-100:  rgba(185, 28, 28, 0.22);
+    --color-info-100:    rgba(29, 78, 216, 0.22);
+  }
+}
+
+/* ── Utility overrides for dark mode ────────────────────────────────────────
+   The app was written with hardcoded Tailwind utilities (bg-white,
+   text-gray-500, border-gray-100, …). Rather than rewriting every file to
+   use semantic tokens, these rules reinterpret the common utilities under
+   dark mode so the whole app flips without churn. */
+
+:root[data-theme="dark"] .bg-white,
+:root[data-theme="dark"] .bg-white\/90 {
+  background-color: var(--color-surface-card);
+}
+:root[data-theme="dark"] .bg-\[\#f2f2f7\] {
+  background-color: var(--color-surface-bg);
+}
+:root[data-theme="dark"] .bg-gray-50,
+:root[data-theme="dark"] .bg-gray-100 {
+  background-color: var(--color-surface-muted);
+}
+:root[data-theme="dark"] .text-gray-900,
+:root[data-theme="dark"] .text-gray-800 {
+  color: var(--color-text-primary);
+}
+:root[data-theme="dark"] .text-gray-700,
+:root[data-theme="dark"] .text-gray-600,
+:root[data-theme="dark"] .text-gray-500 {
+  color: var(--color-text-secondary);
+}
+:root[data-theme="dark"] .text-gray-400,
+:root[data-theme="dark"] .text-gray-300 {
+  color: var(--color-text-tertiary);
+}
+:root[data-theme="dark"] .border-gray-100,
+:root[data-theme="dark"] .border-gray-200 {
+  border-color: var(--color-border-subtle);
+}
+:root[data-theme="dark"] .divide-gray-100 > :not([hidden]) ~ :not([hidden]) {
+  border-color: var(--color-border-subtle);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .bg-white,
+  :root:not([data-theme="light"]) .bg-white\/90 {
+    background-color: var(--color-surface-card);
+  }
+  :root:not([data-theme="light"]) .bg-\[\#f2f2f7\] {
+    background-color: var(--color-surface-bg);
+  }
+  :root:not([data-theme="light"]) .bg-gray-50,
+  :root:not([data-theme="light"]) .bg-gray-100 {
+    background-color: var(--color-surface-muted);
+  }
+  :root:not([data-theme="light"]) .text-gray-900,
+  :root:not([data-theme="light"]) .text-gray-800 {
+    color: var(--color-text-primary);
+  }
+  :root:not([data-theme="light"]) .text-gray-700,
+  :root:not([data-theme="light"]) .text-gray-600,
+  :root:not([data-theme="light"]) .text-gray-500 {
+    color: var(--color-text-secondary);
+  }
+  :root:not([data-theme="light"]) .text-gray-400,
+  :root:not([data-theme="light"]) .text-gray-300 {
+    color: var(--color-text-tertiary);
+  }
+  :root:not([data-theme="light"]) .border-gray-100,
+  :root:not([data-theme="light"]) .border-gray-200 {
+    border-color: var(--color-border-subtle);
+  }
+  :root:not([data-theme="light"]) .divide-gray-100 > :not([hidden]) ~ :not([hidden]) {
+    border-color: var(--color-border-subtle);
   }
 }
 

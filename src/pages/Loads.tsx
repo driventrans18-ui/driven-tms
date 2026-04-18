@@ -81,7 +81,7 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 const TABS: Array<LoadStatus | 'All'> = ['All', 'Pending', 'Assigned', 'In Transit', 'Delivered']
-const selectCls = "w-full px-3 py-2 text-sm rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#c8410a]/20 focus:border-[#c8410a]"
+const selectCls = "w-full px-3 py-2 text-sm rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-500)]/20 focus:border-[var(--color-brand-500)]"
 
 // ── Shared field ──────────────────────────────────────────────────────────────
 
@@ -95,7 +95,7 @@ function Field({ label, value, onChange, placeholder = '', type = 'text', requir
         {label}{required && <span className="text-red-400 ml-0.5">*</span>}
       </label>
       <input type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
-        className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#c8410a]/20 focus:border-[#c8410a] transition-colors" />
+        className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-500)]/20 focus:border-[var(--color-brand-500)] transition-colors" />
     </div>
   )
 }
@@ -330,7 +330,7 @@ function LoadModal({ onClose, editing }: { onClose: () => void; editing: Load | 
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Trailer</label>
             <select value={form.trailer_id} onChange={e => set('trailer_id', e.target.value)}
-              className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#c8410a]/20 focus:border-[#c8410a]">
+              className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-500)]/20 focus:border-[var(--color-brand-500)]">
               <option value="">— None —</option>
               {trailers.map(t => (
                 <option key={t.id} value={t.id}>
@@ -353,7 +353,7 @@ function LoadModal({ onClose, editing }: { onClose: () => void; editing: Load | 
         <div className="flex justify-end gap-2 mt-5">
           <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 cursor-pointer">Cancel</button>
           <button onClick={() => mutation.mutate()} disabled={!canSubmit}
-            className="px-4 py-2 text-sm text-white rounded-lg disabled:opacity-50 cursor-pointer" style={{ background: '#c8410a' }}>
+            className="px-4 py-2 text-sm text-white rounded-lg disabled:opacity-50 cursor-pointer" style={{ background: 'var(--color-brand-500)' }}>
             {mutation.isPending ? 'Saving…' : editing ? 'Save Changes' : 'Create Load'}
           </button>
         </div>
@@ -488,7 +488,7 @@ function LoadDocuments({ loadId }: { loadId: string }) {
                 {KIND_LABEL[doc.kind]}
               </span>
               <button onClick={() => openDoc(doc)}
-                className="flex-1 text-left text-gray-700 hover:text-[#c8410a] truncate cursor-pointer">
+                className="flex-1 text-left text-gray-700 hover:text-[var(--color-brand-500)] truncate cursor-pointer">
                 {doc.file_name}
               </button>
               <button onClick={() => deleteDoc(doc)} aria-label="Delete document"
@@ -536,7 +536,7 @@ function DetailPanel({ load, onClose, onEdit, onDelete, deleting }: {
               </div>
               <div className="w-px h-3 bg-gray-200 ml-[5px]" />
               <div className="flex items-start gap-2 text-sm">
-                <span className="mt-0.5 w-2 h-2 rounded-full flex-shrink-0" style={{ background: '#c8410a' }} />
+                <span className="mt-0.5 w-2 h-2 rounded-full flex-shrink-0" style={{ background: 'var(--color-brand-500)' }} />
                 <span className="text-gray-700">{dest}</span>
               </div>
             </div>
@@ -639,7 +639,7 @@ export function Loads() {
           <p className="text-sm text-gray-400 mt-0.5">{loads.length} total loads</p>
         </div>
         <button onClick={() => setModalState({ open: true, editing: null })}
-          className="flex items-center gap-1.5 px-3.5 py-2 text-sm font-medium text-white rounded-lg cursor-pointer" style={{ background: '#c8410a' }}>
+          className="flex items-center gap-1.5 px-3.5 py-2 text-sm font-medium text-white rounded-lg cursor-pointer" style={{ background: 'var(--color-brand-500)' }}>
           <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
           New Load
         </button>
@@ -679,7 +679,7 @@ export function Loads() {
               <tbody className="divide-y divide-gray-50">
                 {filtered.map(load => (
                   <tr key={load.id} onClick={() => setSelected(selected?.id === load.id ? null : load)}
-                    className={`cursor-pointer transition-colors ${selected?.id === load.id ? 'bg-[#c8410a]/5' : 'hover:bg-gray-50'}`}>
+                    className={`cursor-pointer transition-colors ${selected?.id === load.id ? 'bg-[var(--color-brand-500)]/5' : 'hover:bg-gray-50'}`}>
                     <td className="px-4 py-3 font-medium text-gray-900 whitespace-nowrap">
                       {load.load_number || `#${load.id.slice(0, 8)}`}
                     </td>

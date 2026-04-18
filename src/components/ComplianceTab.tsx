@@ -77,7 +77,7 @@ function ItemForm({
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Type</label>
             <select value={form.kind} onChange={e => set('kind', e.target.value)}
-              className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#c8410a]/20 focus:border-[#c8410a]">
+              className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-500)]/20 focus:border-[var(--color-brand-500)]">
               {allowed.map(k => <option key={k} value={k}>{KIND_LABEL[k]}</option>)}
             </select>
           </div>
@@ -85,25 +85,25 @@ function ItemForm({
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Issued</label>
               <input type="date" value={form.issued_at} onChange={e => set('issued_at', e.target.value)}
-                className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#c8410a]/20 focus:border-[#c8410a]" />
+                className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-500)]/20 focus:border-[var(--color-brand-500)]" />
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Expires *</label>
               <input type="date" value={form.expires_at} onChange={e => set('expires_at', e.target.value)}
-                className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#c8410a]/20 focus:border-[#c8410a]" />
+                className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-500)]/20 focus:border-[var(--color-brand-500)]" />
             </div>
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Notes</label>
             <textarea value={form.notes} onChange={e => set('notes', e.target.value)} rows={3}
-              className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#c8410a]/20 focus:border-[#c8410a]" />
+              className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-500)]/20 focus:border-[var(--color-brand-500)]" />
           </div>
         </div>
         {error && <p className="mt-3 text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
         <div className="flex justify-end gap-2 mt-5">
           <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 cursor-pointer">Cancel</button>
           <button onClick={() => mutation.mutate()} disabled={mutation.isPending || !form.expires_at}
-            className="px-4 py-2 text-sm text-white rounded-lg disabled:opacity-50 cursor-pointer" style={{ background: '#c8410a' }}>
+            className="px-4 py-2 text-sm text-white rounded-lg disabled:opacity-50 cursor-pointer" style={{ background: 'var(--color-brand-500)' }}>
             {mutation.isPending ? 'Saving…' : editing ? 'Save' : 'Add'}
           </button>
         </div>
@@ -137,7 +137,7 @@ export function ComplianceTab({
       <div className="flex items-center justify-between mb-2">
         <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Compliance</h3>
         <button onClick={() => setModal({ open: true, editing: null })}
-          className="text-xs font-medium text-[#c8410a] hover:underline cursor-pointer">+ Add</button>
+          className="text-xs font-medium text-[var(--color-brand-500)] hover:underline cursor-pointer">+ Add</button>
       </div>
       {isLoading ? (
         <p className="text-xs text-gray-400">Loading…</p>

@@ -127,7 +127,7 @@ export function Loads({ driver }: { driver: Driver }) {
           return (
             <button key={t} onClick={() => setTab(t)}
               className="flex-1 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer"
-              style={on ? { background: '#c8410a', color: 'white' } : { color: '#6b7280' }}>
+              style={on ? { background: 'var(--color-brand-500)', color: 'white' } : { color: '#6b7280' }}>
               {t}
             </button>
           )
@@ -258,7 +258,7 @@ function LoadSheet({ load, driverId, onClose }: { load: LoadDetail; driverId: st
         {load.brokers?.phone && (
           <a href={`tel:${load.brokers.phone}`}
             className="block mt-4 py-3.5 rounded-xl text-center text-white text-base font-semibold"
-            style={{ background: '#c8410a' }}>
+            style={{ background: 'var(--color-brand-500)' }}>
             Call {load.brokers.name}
           </a>
         )}
@@ -419,7 +419,7 @@ function LoadFormSheet({ driverId, editing, onClose }: {
                   return (
                     <button key={s} onClick={() => set('status', s)}
                       className="py-2 rounded-lg text-xs font-medium cursor-pointer"
-                      style={on ? { background: '#c8410a', color: 'white' } : { color: '#6b7280' }}>
+                      style={on ? { background: 'var(--color-brand-500)', color: 'white' } : { color: '#6b7280' }}>
                       {s}
                     </button>
                   )
@@ -496,7 +496,7 @@ function LoadFormSheet({ driverId, editing, onClose }: {
                     }}
                     disabled={estimating || !form.origin_city || !form.dest_city}
                     className="text-[11px] font-semibold uppercase tracking-wide cursor-pointer disabled:opacity-40"
-                    style={{ color: '#c8410a' }}
+                    style={{ color: 'var(--color-brand-500)' }}
                   >
                     {estimating ? 'Estimating…' : 'Estimate'}
                   </button>
@@ -594,7 +594,7 @@ function LoadFormSheet({ driverId, editing, onClose }: {
             onClick={() => save.mutate()}
             disabled={!canSubmit}
             className="w-full mt-5 py-3.5 rounded-xl text-white text-base font-semibold disabled:opacity-50 cursor-pointer"
-            style={{ background: '#c8410a' }}
+            style={{ background: 'var(--color-brand-500)' }}
           >
             {save.isPending ? 'Saving…' : isEdit ? 'Save Changes' : 'Create Load'}
           </button>
@@ -671,7 +671,7 @@ function QuickBrokerSheet({ onClose, onCreated }: { onClose: () => void; onCreat
           onClick={() => save.mutate()}
           disabled={save.isPending || !name.trim()}
           className="w-full mt-5 py-3.5 rounded-xl text-white text-base font-semibold disabled:opacity-50 cursor-pointer"
-          style={{ background: '#c8410a' }}
+          style={{ background: 'var(--color-brand-500)' }}
         >
           {save.isPending ? 'Saving…' : 'Add Broker'}
         </button>
@@ -882,7 +882,7 @@ function LoadDocs({ load }: { load: LoadDetail }) {
       {isDocScanAvailable() && (
         <button onClick={scanRateCon} disabled={busy !== null}
           className="w-full mb-2 py-2.5 rounded-lg text-sm font-semibold text-white disabled:opacity-50 cursor-pointer"
-          style={{ background: '#c8410a' }}>
+          style={{ background: 'var(--color-brand-500)' }}>
           {busy === 'scan' ? 'Uploading scan…' : 'Scan Rate Con (multi-page)'}
         </button>
       )}
@@ -908,7 +908,7 @@ function LoadDocs({ load }: { load: LoadDetail }) {
             return (
               <button key={k} onClick={() => setPickKind(k)}
                 className="py-1.5 rounded-md text-[11px] font-semibold cursor-pointer"
-                style={on ? { background: '#c8410a', color: 'white' } : { color: '#6b7280' }}>
+                style={on ? { background: 'var(--color-brand-500)', color: 'white' } : { color: '#6b7280' }}>
                 {label}
               </button>
             )
@@ -957,7 +957,7 @@ function LoadDocs({ load }: { load: LoadDetail }) {
         onClick={emailFactoring}
         disabled={busy !== null}
         className="w-full py-3 rounded-xl text-white text-base font-semibold disabled:opacity-50 cursor-pointer"
-        style={{ background: '#c8410a' }}
+        style={{ background: 'var(--color-brand-500)' }}
       >
         {busy === 'email' ? 'Opening Mail…' : `Email docs to factoring${settings?.factoring_email ? ` (${settings.factoring_email})` : ''}`}
       </button>

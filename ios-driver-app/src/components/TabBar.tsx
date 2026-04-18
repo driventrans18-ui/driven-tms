@@ -26,7 +26,7 @@ export function TabBar({ active, onChange }: { active: TabKey; onChange: (k: Tab
               <button
                 onClick={() => onChange(t.key)}
                 className="w-full flex flex-col items-center justify-center py-2 gap-1 cursor-pointer"
-                style={{ color: on ? '#c8410a' : '#8e8e93' }}
+                style={{ color: on ? 'var(--color-brand-500)' : '#8e8e93' }}
               >
                 <span className="w-6 h-6 flex items-center justify-center">{t.icon}</span>
                 <span className="text-[11px] font-medium">{t.label}</span>

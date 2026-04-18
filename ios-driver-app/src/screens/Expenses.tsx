@@ -101,7 +101,7 @@ export function Expenses() {
           return (
             <button key={c} onClick={() => setCatFilter(c)}
               className="px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap cursor-pointer"
-              style={on ? { background: '#c8410a', color: 'white' } : { color: '#6b7280' }}>
+              style={on ? { background: 'var(--color-brand-500)', color: 'white' } : { color: '#6b7280' }}>
               {c}
             </button>
           )
@@ -241,7 +241,7 @@ function ExpenseSheet({ editing, onClose }: { editing: Expense | null; onClose: 
 
         <button onClick={() => save.mutate()} disabled={save.isPending}
           className="w-full mt-5 py-3.5 rounded-xl text-white text-base font-semibold disabled:opacity-50 cursor-pointer"
-          style={{ background: '#c8410a' }}>
+          style={{ background: 'var(--color-brand-500)' }}>
           {save.isPending ? 'Saving…' : editing ? 'Save Changes' : 'Add Expense'}
         </button>
 

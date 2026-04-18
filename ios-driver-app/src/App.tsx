@@ -9,6 +9,7 @@ import { Expenses } from './screens/Expenses'
 import { Invoices } from './screens/Invoices'
 import { Profile } from './screens/Profile'
 import { DriverMode } from './screens/DriverMode'
+import { Settings } from './screens/Settings'
 import { TabBar, type TabKey } from './components/TabBar'
 import { registerPushForUser } from './lib/push'
 
@@ -36,7 +37,7 @@ export function App() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center text-sm text-gray-400 bg-[#f2f2f7]">
+      <div className="min-h-screen flex items-center justify-center text-sm text-gray-400 ">
         Loading…
       </div>
     )
@@ -52,10 +53,11 @@ function Shell({ tab, setTab, userId, email }: {
   const { data: driver, isLoading, error } = useDriver(userId, email)
   const [brokersOpen, setBrokersOpen] = useState(false)
   const [driverModeOpen, setDriverModeOpen] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center text-sm text-gray-400 bg-[#f2f2f7]">
+      <div className="min-h-screen flex items-center justify-center text-sm text-gray-400 ">
         Loading profile…
       </div>
     )
@@ -74,22 +76,22 @@ function Shell({ tab, setTab, userId, email }: {
     // overscroll. Only the <main> region scrolls internally. Each screen now
     // renders its own title + optional "+" action in its header row.
     <div
-      className="fixed inset-0 flex flex-col bg-[#f2f2f7]"
-      style={{ paddingTop: 'env(safe-area-inset-top, 0)' }}
+      className="fixed inset-0 flex flex-col"
+      style={{ paddingTop: 'env(safe-area-inset-top, 0)', background: 'var(--color-surface-bg)' }}
     >
       <main className="flex-1 overflow-y-auto px-4 pt-4 pb-4">
         {tab === 'home'     && <Home driver={driver} onGoToLoads={() => setTab('loads')} onOpenDriverMode={() => setDriverModeOpen(true)} />}
         {tab === 'loads'    && <Loads driver={driver} />}
         {tab === 'expenses' && <Expenses />}
         {tab === 'invoices' && <Invoices driver={driver} />}
-        {tab === 'profile'  && <Profile driver={driver} email={email} onOpenBrokers={() => setBrokersOpen(true)} />}
+        {tab === 'profile'  && <Profile driver={driver} email={email} onOpenBrokers={() => setBrokersOpen(true)} onOpenSettings={() => setSettingsOpen(true)} />}
       </main>
       <TabBar active={tab} onChange={setTab} />
       {brokersOpen && (
-        <div className="fixed inset-0 z-50 bg-[#f2f2f7] flex flex-col" style={{ paddingTop: 'env(safe-area-inset-top, 0)' }}>
+        <div className="fixed inset-0 z-50 flex flex-col" style={{ paddingTop: 'env(safe-area-inset-top, 0)', background: 'var(--color-surface-bg)' }}>
           <header className="px-4 pt-4 pb-3 flex items-center justify-between shrink-0">
             <h1 className="text-2xl font-bold text-gray-900">Brokers</h1>
-            <button onClick={() => setBrokersOpen(false)} className="text-[#c8410a] text-base font-medium cursor-pointer">Done</button>
+            <button onClick={() => setBrokersOpen(false)} className="text-[var(--color-brand-500)] text-base font-medium cursor-pointer">Done</button>
           </header>
           <div className="flex-1 overflow-y-auto px-4 pb-6">
             <Brokers />
@@ -99,13 +101,14 @@ function Shell({ tab, setTab, userId, email }: {
       {driverModeOpen && (
         <DriverMode driver={driver} onExit={() => setDriverModeOpen(false)} />
       )}
+      {settingsOpen && <Settings onClose={() => setSettingsOpen(false)} />}
     </div>
   )
 }
 
 function ErrorScreen({ message }: { message: string }) {
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-[#f2f2f7] text-center">
+    <div className="min-h-screen flex flex-col items-center justify-center p-6  text-center">
       <p className="text-base text-gray-700 max-w-sm">{message}</p>
     </div>
   )

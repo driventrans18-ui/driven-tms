@@ -27,9 +27,30 @@ export function PlusButton({ onClick, label = 'Add' }: {
       onClick={onClick}
       aria-label={label}
       className="w-8 h-8 rounded-full text-white flex items-center justify-center text-xl font-light active:opacity-90 cursor-pointer"
-      style={{ background: '#c8410a', lineHeight: 1 }}
+      style={{ background: 'var(--color-brand-500)', lineHeight: 1 }}
     >
       +
+    </button>
+  )
+}
+
+// Circular header icon used for the Settings gear on the Profile screen.
+// Neutral fill so it doesn't compete with the brand "+" buttons on other
+// screens — Apple uses icon-only controls for secondary navigation.
+export function IconButton({ onClick, label, children }: {
+  onClick: () => void
+  label: string
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      className="w-9 h-9 rounded-full flex items-center justify-center active:opacity-80 cursor-pointer"
+      style={{ background: 'var(--color-surface-muted)', color: 'var(--color-text-secondary)' }}
+    >
+      {children}
     </button>
   )
 }

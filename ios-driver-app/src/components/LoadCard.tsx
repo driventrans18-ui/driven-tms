@@ -38,7 +38,7 @@ export function LoadCard({ load, onTap }: { load: LoadCardLoad; onTap?: () => vo
         <div className="flex flex-col items-center pt-1">
           <span className="w-2.5 h-2.5 rounded-full bg-gray-300" />
           <span className="w-px h-5 bg-gray-200 my-0.5" />
-          <span className="w-2.5 h-2.5 rounded-full" style={{ background: '#c8410a' }} />
+          <span className="w-2.5 h-2.5 rounded-full" style={{ background: 'var(--color-brand-500)' }} />
         </div>
         <div className="flex-1 min-w-0">
           <p className="text-base text-gray-900 font-semibold truncate">{routeStr(load.origin_city, load.origin_state)}</p>
