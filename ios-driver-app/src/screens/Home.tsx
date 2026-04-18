@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { cacheGet, cacheSet } from '../lib/cache'
 import { captureBol, uploadBol } from '../lib/bolDocuments'
+import { captureStampedPhoto } from '../lib/stampedCamera'
 import { LoadCard, type LoadCardLoad } from '../components/LoadCard'
 import { ExpirationsCard } from '../components/ExpirationsCard'
 import { LoadCalendar } from '../components/LoadCalendar'
@@ -119,6 +120,7 @@ export function Home({ driver, onGoToLoads, onOpenDriverMode }: {
   driver: Driver; onGoToLoads: () => void; onOpenDriverMode: () => void
 }) {
   const qc = useQueryClient()
+  const [fuelSheetOpen, setFuelSheetOpen] = useState(false)
 
   const { data: activeLoad } = useQuery({
     queryKey: ['active-load', driver.id],
@@ -195,6 +197,29 @@ export function Home({ driver, onGoToLoads, onOpenDriverMode }: {
     onSuccess: () => alert('Document uploaded.'),
   })
 
+  const captureFreight = useMutation({
+    mutationFn: async () => {
+      if (!activeLoad) throw new Error('No active load')
+      const stamped = await captureStampedPhoto()
+      if (!stamped) return
+      const bytes = Uint8Array.from(atob(stamped.base64), c => c.charCodeAt(0))
+      const blob = new Blob([bytes], { type: stamped.mimeType })
+      await uploadBol({
+        loadId:  activeLoad.id,
+        loadRef: activeLoad.load_number || activeLoad.id.slice(0, 8),
+        blob,
+        filename: `freight-${Date.now()}.jpg`,
+        mimeType: stamped.mimeType,
+        kind: 'freight',
+      })
+    },
+    onError: (e: Error) => {
+      if (e.message.toLowerCase().includes('cancel')) return
+      alert('Freight photo failed: ' + e.message)
+    },
+    onSuccess: () => alert('Freight photo uploaded and saved to Files.'),
+  })
+
   return (
     <>
     <div className="space-y-5 pb-28">
@@ -219,6 +244,39 @@ export function Home({ driver, onGoToLoads, onOpenDriverMode }: {
           <p className="text-sm text-gray-500">No active load. Pull a load from Loads tab.</p>
         </div>
       )}
+
+      {/* Quick actions — fast logging near the wheel, distinct from the
+          pinned end-of-trip bar at the bottom. */}
+      <div>
+        <h2 className="px-1 text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Quick actions</h2>
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={() => setFuelSheetOpen(true)}
+            className="bg-white rounded-2xl p-4 text-left active:bg-gray-50 cursor-pointer flex items-center gap-3"
+          >
+            <span className="w-11 h-11 rounded-xl bg-yellow-100 text-yellow-700 flex items-center justify-center text-xl" aria-hidden>⛽</span>
+            <span>
+              <span className="block text-sm font-semibold text-gray-900">Add Fuel</span>
+              <span className="block text-[11px] text-gray-500">Gallons, price, odometer</span>
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={() => captureFreight.mutate()}
+            disabled={!activeLoad || captureFreight.isPending}
+            className="bg-white rounded-2xl p-4 text-left active:bg-gray-50 disabled:opacity-40 cursor-pointer flex items-center gap-3"
+          >
+            <span className="w-11 h-11 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center text-xl" aria-hidden>📸</span>
+            <span>
+              <span className="block text-sm font-semibold text-gray-900">
+                {captureFreight.isPending ? 'Uploading…' : 'Capture Freight'}
+              </span>
+              <span className="block text-[11px] text-gray-500">Time-stamped photo of cargo</span>
+            </span>
+          </button>
+        </div>
+      </div>
 
       <Summary driverId={driver.id} />
 
@@ -283,6 +341,171 @@ export function Home({ driver, onGoToLoads, onOpenDriverMode }: {
         </button>
       </div>
     </div>
+
+    {fuelSheetOpen && (
+      <AddFuelSheet
+        loadId={activeLoad?.id ?? null}
+        onClose={() => setFuelSheetOpen(false)}
+      />
+    )}
     </>
+  )
+}
+
+// ── Quick fuel entry ─────────────────────────────────────────────────────────
+
+// Lightweight bottom sheet for logging a fuel fill-up without opening the
+// full Expenses tab. Writes to `expenses` with category='Fuel'. Amount
+// auto-computes from gallons × price/gal but can be overridden.
+function AddFuelSheet({ loadId, onClose }: { loadId: string | null; onClose: () => void }) {
+  const qc = useQueryClient()
+  const [form, setForm] = useState({
+    expense_date:  new Date().toISOString().slice(0, 10),
+    gallons:       '',
+    price_per_gal: '',
+    odometer:      '',
+    vendor:        '',
+    amount:        '', // computed but editable
+    notes:         '',
+  })
+  const [amountTouched, setAmountTouched] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const set = <K extends keyof typeof form>(k: K, v: string) => setForm(f => ({ ...f, [k]: v }))
+
+  // Auto-compute amount from gallons × price unless user typed into it.
+  const computedAmount = (() => {
+    const g = parseFloat(form.gallons)
+    const p = parseFloat(form.price_per_gal)
+    if (!Number.isFinite(g) || !Number.isFinite(p)) return ''
+    return (g * p).toFixed(2)
+  })()
+  const effectiveAmount = amountTouched ? form.amount : computedAmount
+
+  const save = useMutation({
+    mutationFn: async () => {
+      const amountNum = parseFloat(effectiveAmount)
+      if (!Number.isFinite(amountNum) || amountNum <= 0) {
+        throw new Error('Enter gallons and price per gallon, or type an amount.')
+      }
+      const payload = {
+        expense_date:  form.expense_date || new Date().toISOString().slice(0, 10),
+        category:      'Fuel',
+        amount:        amountNum,
+        gallons:       form.gallons       ? parseFloat(form.gallons)       : null,
+        price_per_gal: form.price_per_gal ? parseFloat(form.price_per_gal) : null,
+        odometer:      form.odometer      ? parseFloat(form.odometer)      : null,
+        vendor:        form.vendor || null,
+        notes:         form.notes  || null,
+        load_id:       loadId,
+      }
+      const { error } = await supabase.from('expenses').insert(payload)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['driver-expenses'] })
+      qc.invalidateQueries({ queryKey: ['driver-summary'] })
+      onClose()
+    },
+    onError: (e: Error) => setError(e.message),
+  })
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end" role="dialog" aria-modal="true" aria-labelledby="add-fuel-title">
+      <div className="absolute inset-0 bg-black/30" onClick={onClose} />
+      <div
+        className="relative bg-white w-full rounded-t-3xl p-6 max-h-[88vh] overflow-y-auto"
+        style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 16px) + 16px)' }}
+      >
+        <div className="flex items-center justify-between mb-4">
+          <h2 id="add-fuel-title" className="text-lg font-bold text-gray-900">Add Fuel</h2>
+          <button onClick={onClose} aria-label="Close" className="text-gray-400 text-lg cursor-pointer">✕</button>
+        </div>
+
+        <div className="space-y-3">
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Date</label>
+            <input
+              type="date"
+              value={form.expense_date}
+              onChange={e => set('expense_date', e.target.value)}
+              className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-base"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Gallons</label>
+              <input
+                type="number" inputMode="decimal" placeholder="0.0"
+                value={form.gallons}
+                onChange={e => set('gallons', e.target.value)}
+                className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-base"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Price / gal</label>
+              <input
+                type="number" inputMode="decimal" placeholder="0.00"
+                value={form.price_per_gal}
+                onChange={e => set('price_per_gal', e.target.value)}
+                className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-base"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">
+              Amount {!amountTouched && effectiveAmount && <span className="text-gray-400 font-normal">· auto</span>}
+            </label>
+            <input
+              type="number" inputMode="decimal" placeholder="0.00"
+              value={effectiveAmount}
+              onChange={e => { setAmountTouched(true); set('amount', e.target.value) }}
+              className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-base"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Odometer</label>
+            <input
+              type="number" inputMode="numeric" placeholder="miles"
+              value={form.odometer}
+              onChange={e => set('odometer', e.target.value)}
+              className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-base"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Vendor</label>
+            <input
+              placeholder="Love's, Pilot, TA, etc."
+              value={form.vendor}
+              onChange={e => set('vendor', e.target.value)}
+              className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-base"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Notes</label>
+            <input
+              placeholder="DEF, cash discount, etc."
+              value={form.notes}
+              onChange={e => set('notes', e.target.value)}
+              className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-base"
+            />
+          </div>
+        </div>
+
+        {error && (
+          <p role="alert" className="mt-3 text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">
+            {error}
+          </p>
+        )}
+
+        <button
+          onClick={() => save.mutate()}
+          disabled={save.isPending}
+          className="w-full mt-5 py-3.5 rounded-xl text-white text-base font-semibold disabled:opacity-50 cursor-pointer"
+          style={{ background: '#c8410a' }}
+        >
+          {save.isPending ? 'Saving…' : 'Save Fuel Entry'}
+        </button>
+      </div>
+    </div>
   )
 }
