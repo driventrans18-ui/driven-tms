@@ -49,9 +49,18 @@ interface Invoice {
 }
 
 interface CompanySettings {
-  company_name: string | null
-  logo_path: string | null
-  factoring_email: string | null
+  company_name:   string | null
+  logo_path:      string | null
+  factoring_email:string | null
+  address:        string | null
+  city:           string | null
+  state:          string | null
+  zip:            string | null
+  phone:          string | null
+  email:          string | null
+  mc_number:      string | null
+  dot_number:     string | null
+  ein:            string | null
 }
 
 function fmtMoney(n: number | null | undefined) {
@@ -281,7 +290,7 @@ function InvoiceSheet({ invoice, driverId, onClose }: {
     queryKey: ['company-settings'],
     queryFn: async () => {
       const { data, error } = await supabase.from('company_settings')
-        .select('company_name, logo_path, factoring_email').limit(1).maybeSingle()
+        .select('company_name, logo_path, factoring_email, address, city, state, zip, phone, email, mc_number, dot_number, ein').limit(1).maybeSingle()
       if (error) throw error
       return data as CompanySettings | null
     },
@@ -350,7 +359,19 @@ function InvoiceSheet({ invoice, driverId, onClose }: {
         status:     invoice.status,
         notes:      invoice.notes,
       },
-      company: { name: companyName, logoDataUrl },
+      company: {
+        name: companyName,
+        logoDataUrl,
+        address:    settings?.address    ?? null,
+        city:       settings?.city       ?? null,
+        state:      settings?.state      ?? null,
+        zip:        settings?.zip        ?? null,
+        phone:      settings?.phone      ?? null,
+        email:      settings?.email      ?? null,
+        mc_number:  settings?.mc_number  ?? null,
+        dot_number: settings?.dot_number ?? null,
+        ein:        settings?.ein        ?? null,
+      },
       billTo: billTo ? {
         name:  billTo.name,
         email: billTo.email,
@@ -557,6 +578,13 @@ export function InvoiceFormSheet({ driverId, editing, onClose }: {
   const set = <K extends keyof typeof form>(k: K, v: typeof form[K]) =>
     setForm(f => ({ ...f, [k]: v }))
 
+  // Inline "add new" state — opened when the bill-to picker's "+ New" option
+  // is chosen. Creates the broker / customer and auto-selects it.
+  const [quickAdd, setQuickAdd] = useState<'broker' | 'customer' | null>(null)
+  const [qa, setQa] = useState({ name: '', email: '', phone: '', mc: '', address: '' })
+  const [qaError, setQaError] = useState<string | null>(null)
+  const setQa_ = (k: keyof typeof qa, v: string) => setQa(f => ({ ...f, [k]: v }))
+
   // Bill-to picker options: brokers + customers. Selecting one clears the other
   // so we never write both.
   const { data: brokers = [] } = useQuery({
@@ -590,6 +618,42 @@ export function InvoiceFormSheet({ driverId, editing, onClose }: {
         rate: number | null; status: string
       }>
     },
+  })
+
+  const createBroker = useMutation({
+    mutationFn: async () => {
+      const name = qa.name.trim()
+      if (!name) throw new Error('Enter a broker name.')
+      const { data, error } = await supabase.from('brokers').insert({
+        name, email: qa.email || null, phone: qa.phone || null, mc_number: qa.mc || null,
+      }).select('id').single()
+      if (error) throw error
+      return (data as { id: string }).id
+    },
+    onSuccess: (id) => {
+      qc.invalidateQueries({ queryKey: ['brokers-simple'] })
+      set('broker_id', id); set('customer_id', '')
+      setQuickAdd(null); setQa({ name: '', email: '', phone: '', mc: '', address: '' }); setQaError(null)
+    },
+    onError: (e: Error) => setQaError(e.message),
+  })
+
+  const createCustomer = useMutation({
+    mutationFn: async () => {
+      const name = qa.name.trim()
+      if (!name) throw new Error('Enter a customer name.')
+      const { data, error } = await supabase.from('customers').insert({
+        name, email: qa.email || null, phone: qa.phone || null, address: qa.address || null,
+      }).select('id').single()
+      if (error) throw error
+      return (data as { id: string }).id
+    },
+    onSuccess: (id) => {
+      qc.invalidateQueries({ queryKey: ['customers-simple'] })
+      set('customer_id', id); set('broker_id', '')
+      setQuickAdd(null); setQa({ name: '', email: '', phone: '', mc: '', address: '' }); setQaError(null)
+    },
+    onError: (e: Error) => setQaError(e.message),
   })
 
   const save = useMutation({
@@ -672,6 +736,8 @@ export function InvoiceFormSheet({ driverId, editing, onClose }: {
               value={form.customer_id || (form.broker_id ? `b:${form.broker_id}` : '')}
               onChange={e => {
                 const v = e.target.value
+                if (v === '__new_customer') { setQuickAdd('customer'); setQaError(null); return }
+                if (v === '__new_broker')   { setQuickAdd('broker');   setQaError(null); return }
                 if (!v) { set('customer_id', ''); set('broker_id', ''); return }
                 if (v.startsWith('b:')) { set('broker_id', v.slice(2)); set('customer_id', '') }
                 else                    { set('customer_id', v);       set('broker_id', '') }
@@ -681,10 +747,50 @@ export function InvoiceFormSheet({ driverId, editing, onClose }: {
               {customers.length > 0 && <optgroup label="Customers">
                 {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </optgroup>}
+              <option value="__new_customer">+ New customer…</option>
               {brokers.length > 0 && <optgroup label="Brokers">
                 {brokers.map(b => <option key={b.id} value={`b:${b.id}`}>{b.name}</option>)}
               </optgroup>}
+              <option value="__new_broker">+ New broker…</option>
             </select>
+
+            {quickAdd && (
+              <div className="mt-2 p-3 rounded-xl bg-white border border-gray-200 space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold text-gray-700">
+                    {quickAdd === 'broker' ? 'New broker' : 'New customer'}
+                  </p>
+                  <button type="button" onClick={() => { setQuickAdd(null); setQaError(null) }}
+                    className="text-xs text-gray-400 cursor-pointer">Cancel</button>
+                </div>
+                <input value={qa.name} onChange={e => setQa_('name', e.target.value)}
+                  placeholder={quickAdd === 'broker' ? 'Acme Freight Brokers' : 'Walmart DC #4321'}
+                  className="w-full px-3 py-2.5 rounded-lg bg-gray-50 border border-gray-200 text-base" />
+                <div className="grid grid-cols-2 gap-2">
+                  <input value={qa.email} onChange={e => setQa_('email', e.target.value)} placeholder="Email" type="email"
+                    className="w-full px-3 py-2.5 rounded-lg bg-gray-50 border border-gray-200 text-base" />
+                  <input value={qa.phone} onChange={e => setQa_('phone', e.target.value)} placeholder="Phone" type="tel"
+                    className="w-full px-3 py-2.5 rounded-lg bg-gray-50 border border-gray-200 text-base" />
+                </div>
+                {quickAdd === 'broker' ? (
+                  <input value={qa.mc} onChange={e => setQa_('mc', e.target.value)} placeholder="MC# (optional)"
+                    className="w-full px-3 py-2.5 rounded-lg bg-gray-50 border border-gray-200 text-base" />
+                ) : (
+                  <input value={qa.address} onChange={e => setQa_('address', e.target.value)} placeholder="Address (optional)"
+                    className="w-full px-3 py-2.5 rounded-lg bg-gray-50 border border-gray-200 text-base" />
+                )}
+                {qaError && <p className="text-xs text-red-600">{qaError}</p>}
+                <button type="button"
+                  onClick={() => (quickAdd === 'broker' ? createBroker : createCustomer).mutate()}
+                  disabled={(quickAdd === 'broker' ? createBroker : createCustomer).isPending || !qa.name.trim()}
+                  className="w-full py-2.5 rounded-lg text-white text-sm font-semibold disabled:opacity-50 cursor-pointer"
+                  style={{ background: '#c8410a' }}>
+                  {(quickAdd === 'broker' ? createBroker : createCustomer).isPending
+                    ? 'Saving…'
+                    : quickAdd === 'broker' ? 'Add broker' : 'Add customer'}
+                </button>
+              </div>
+            )}
           </div>
 
           <div>

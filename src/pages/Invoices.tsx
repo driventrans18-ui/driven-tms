@@ -69,6 +69,15 @@ function InvoiceModal({ onClose, editing }: { onClose: () => void; editing: Invo
   const [error, setError] = useState<string | null>(null)
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }))
 
+  // Inline "add new" panel state. When the user picks "+ New broker" or
+  // "+ New customer" from the dropdown, a small form opens below the select
+  // so they can create and auto-select the new record without leaving the
+  // modal.
+  const [quickAdd, setQuickAdd] = useState<'broker' | 'customer' | null>(null)
+  const [qa, setQa] = useState({ name: '', email: '', phone: '', mc: '', address: '' })
+  const [qaError, setQaError] = useState<string | null>(null)
+  const setQaField = (k: keyof typeof qa, v: string) => setQa(f => ({ ...f, [k]: v }))
+
   const { data: loads = [] } = useQuery({ queryKey: ['loads-simple'], queryFn: async () => {
     const { data } = await supabase.from('loads').select('id, load_number, origin_city, dest_city').order('created_at', { ascending: false })
     return (data ?? []) as Array<{ id: string; load_number: string | null; origin_city: string | null; dest_city: string | null }>
@@ -81,6 +90,44 @@ function InvoiceModal({ onClose, editing }: { onClose: () => void; editing: Invo
     const { data } = await supabase.from('customers').select('id, name').order('name')
     return (data ?? []) as Array<{ id: string; name: string }>
   }})
+
+  const createBroker = useMutation({
+    mutationFn: async () => {
+      const name = qa.name.trim()
+      if (!name) throw new Error('Enter a broker name.')
+      const { data, error } = await supabase.from('brokers').insert({
+        name, email: qa.email || null, phone: qa.phone || null, mc_number: qa.mc || null,
+      }).select('id').single()
+      if (error) throw error
+      return (data as { id: string }).id
+    },
+    onSuccess: (id) => {
+      qc.invalidateQueries({ queryKey: ['brokers-simple'] })
+      qc.invalidateQueries({ queryKey: ['brokers'] })
+      set('broker_id', id)
+      setQuickAdd(null); setQa({ name: '', email: '', phone: '', mc: '', address: '' }); setQaError(null)
+    },
+    onError: (e: Error) => setQaError(e.message),
+  })
+
+  const createCustomer = useMutation({
+    mutationFn: async () => {
+      const name = qa.name.trim()
+      if (!name) throw new Error('Enter a customer name.')
+      const { data, error } = await supabase.from('customers').insert({
+        name, email: qa.email || null, phone: qa.phone || null, address: qa.address || null,
+      }).select('id').single()
+      if (error) throw error
+      return (data as { id: string }).id
+    },
+    onSuccess: (id) => {
+      qc.invalidateQueries({ queryKey: ['customers-simple'] })
+      qc.invalidateQueries({ queryKey: ['customers'] })
+      set('customer_id', id)
+      setQuickAdd(null); setQa({ name: '', email: '', phone: '', mc: '', address: '' }); setQaError(null)
+    },
+    onError: (e: Error) => setQaError(e.message),
+  })
 
   const mutation = useMutation({
     mutationFn: async () => {
@@ -154,17 +201,67 @@ function InvoiceModal({ onClose, editing }: { onClose: () => void; editing: Invo
               })}
             </div>
             {billTo === 'broker' ? (
-              <select value={form.broker_id} onChange={e => set('broker_id', e.target.value)}
+              <select
+                value={form.broker_id}
+                onChange={e => {
+                  if (e.target.value === '__new') { setQuickAdd('broker'); setQaError(null); return }
+                  set('broker_id', e.target.value)
+                }}
                 className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#c8410a]/20 focus:border-[#c8410a]">
                 <option value="">— Select broker —</option>
                 {brokers.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                <option value="__new">+ New broker…</option>
               </select>
             ) : (
-              <select value={form.customer_id} onChange={e => set('customer_id', e.target.value)}
+              <select
+                value={form.customer_id}
+                onChange={e => {
+                  if (e.target.value === '__new') { setQuickAdd('customer'); setQaError(null); return }
+                  set('customer_id', e.target.value)
+                }}
                 className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#c8410a]/20 focus:border-[#c8410a]">
                 <option value="">— Select customer —</option>
                 {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                <option value="__new">+ New customer…</option>
               </select>
+            )}
+
+            {quickAdd && (
+              <div className="mt-3 p-3 rounded-lg border border-gray-200 bg-white space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold text-gray-700">
+                    {quickAdd === 'broker' ? 'New broker' : 'New customer'}
+                  </p>
+                  <button type="button" onClick={() => { setQuickAdd(null); setQaError(null) }}
+                    className="text-xs text-gray-400 hover:text-gray-600 cursor-pointer">Cancel</button>
+                </div>
+                <input value={qa.name} onChange={e => setQaField('name', e.target.value)}
+                  placeholder={quickAdd === 'broker' ? 'Acme Freight Brokers' : 'Walmart DC #4321'}
+                  className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#c8410a]/20 focus:border-[#c8410a]" />
+                <div className="grid grid-cols-2 gap-2">
+                  <input value={qa.email} onChange={e => setQaField('email', e.target.value)} placeholder="Email" type="email"
+                    className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#c8410a]/20 focus:border-[#c8410a]" />
+                  <input value={qa.phone} onChange={e => setQaField('phone', e.target.value)} placeholder="Phone" type="tel"
+                    className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#c8410a]/20 focus:border-[#c8410a]" />
+                </div>
+                {quickAdd === 'broker' ? (
+                  <input value={qa.mc} onChange={e => setQaField('mc', e.target.value)} placeholder="MC# (optional)"
+                    className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#c8410a]/20 focus:border-[#c8410a]" />
+                ) : (
+                  <input value={qa.address} onChange={e => setQaField('address', e.target.value)} placeholder="Address (optional)"
+                    className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#c8410a]/20 focus:border-[#c8410a]" />
+                )}
+                {qaError && <p className="text-xs text-red-600">{qaError}</p>}
+                <button type="button"
+                  onClick={() => (quickAdd === 'broker' ? createBroker : createCustomer).mutate()}
+                  disabled={(quickAdd === 'broker' ? createBroker : createCustomer).isPending || !qa.name.trim()}
+                  className="w-full py-2 text-sm text-white rounded-lg disabled:opacity-50 cursor-pointer"
+                  style={{ background: '#c8410a' }}>
+                  {(quickAdd === 'broker' ? createBroker : createCustomer).isPending
+                    ? 'Saving…'
+                    : quickAdd === 'broker' ? 'Add broker' : 'Add customer'}
+                </button>
+              </div>
             )}
           </div>
 
