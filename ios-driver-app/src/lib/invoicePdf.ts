@@ -23,6 +23,9 @@ export interface InvoicePdfData {
   company: {
     name: string
     logoDataUrl?: string | null // base64 data URL when available
+    /** Natural dimensions of the logo so render() can letterbox without squashing. */
+    logoWidth?:  number | null
+    logoHeight?: number | null
     address?:    string | null
     city?:       string | null
     state?:      string | null
@@ -66,9 +69,18 @@ export function generateInvoicePdf(data: InvoicePdfData): Blob {
   let cursorY = margin
 
   // ── Header: logo + company name (left) · INVOICE #/dates (right) ──────────
+  // Letterbox the logo into a fixed box instead of forcing it to a square so
+  // tall-narrow marks (arch-over-wordmark, stacked logo, etc.) aren't
+  // visually squashed.
+  const LOGO_BOX_W = 84, LOGO_BOX_H = 72
   if (data.company.logoDataUrl) {
     try {
-      doc.addImage(data.company.logoDataUrl, 'PNG', margin, cursorY, 64, 64, undefined, 'FAST')
+      const natW = data.company.logoWidth  && data.company.logoWidth  > 0 ? data.company.logoWidth  : LOGO_BOX_W
+      const natH = data.company.logoHeight && data.company.logoHeight > 0 ? data.company.logoHeight : LOGO_BOX_H
+      const scale = Math.min(LOGO_BOX_W / natW, LOGO_BOX_H / natH)
+      const drawW = Math.max(1, natW * scale)
+      const drawH = Math.max(1, natH * scale)
+      doc.addImage(data.company.logoDataUrl, 'PNG', margin, cursorY, drawW, drawH, undefined, 'FAST')
     } catch { /* silently skip a broken logo */ }
   } else {
     // Brand-colored square with the first letter — matches the app's fallback.
@@ -257,4 +269,15 @@ export async function logoToDataUrl(url: string | null): Promise<string | null> 
   } catch {
     return null
   }
+}
+
+// Measure a data URL. Done async via <img> because jsPDF's addImage is sync
+// and needs the natural dimensions ahead of time to avoid squashing.
+export function measureDataUrl(dataUrl: string): Promise<{ w: number; h: number } | null> {
+  return new Promise(resolve => {
+    const img = new Image()
+    img.onload  = () => resolve({ w: img.naturalWidth, h: img.naturalHeight })
+    img.onerror = () => resolve(null)
+    img.src = dataUrl
+  })
 }

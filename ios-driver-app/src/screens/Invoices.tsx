@@ -346,11 +346,12 @@ function InvoiceSheet({ invoice, driverId, onClose }: {
   async function buildPdfData(): Promise<{ data: InvoicePdfData; fileName: string }> {
     // Lazy-load the PDF generator — jspdf + html2canvas are heavy and only
     // matter once the user actually wants a PDF.
-    const { logoToDataUrl } = await import('../lib/invoicePdf')
+    const { logoToDataUrl, measureDataUrl } = await import('../lib/invoicePdf')
     const companyName = settings?.company_name ?? 'Driven Transportation'
     const invoiceLabel = invoice.invoice_number || `${invoice.id.slice(0, 8)}`
     const routeDesc = origin && dest ? `${loadLabel} · ${origin} → ${dest}` : `Load ${loadLabel}`
     const logoDataUrl = logoUrl ? await logoToDataUrl(logoUrl) : null
+    const logoDims    = logoDataUrl ? await measureDataUrl(logoDataUrl) : null
     const data: InvoicePdfData = {
       invoice: {
         number:     invoiceLabel,
@@ -362,6 +363,8 @@ function InvoiceSheet({ invoice, driverId, onClose }: {
       company: {
         name: companyName,
         logoDataUrl,
+        logoWidth:  logoDims?.w ?? null,
+        logoHeight: logoDims?.h ?? null,
         address:    settings?.address    ?? null,
         city:       settings?.city       ?? null,
         state:      settings?.state      ?? null,
@@ -578,6 +581,10 @@ export function InvoiceFormSheet({ driverId, editing, onClose }: {
   const set = <K extends keyof typeof form>(k: K, v: typeof form[K]) =>
     setForm(f => ({ ...f, [k]: v }))
 
+  const [previewBusy, setPreviewBusy] = useState(false)
+  const [preview, setPreview] = useState<{ url: string; fileName: string } | null>(null)
+  useEffect(() => () => { if (preview) URL.revokeObjectURL(preview.url) }, [preview])
+
   // Inline "add new" state — opened when the bill-to picker's "+ New" option
   // is chosen. Creates the broker / customer and auto-selects it.
   const [quickAdd, setQuickAdd] = useState<'broker' | 'customer' | null>(null)
@@ -655,6 +662,87 @@ export function InvoiceFormSheet({ driverId, editing, onClose }: {
     },
     onError: (e: Error) => setQaError(e.message),
   })
+
+  // Render the PDF from the current (unsaved) form state so the driver can
+  // sanity-check the layout and numbers before hitting Save.
+  async function openPreview() {
+    setPreviewBusy(true); setError(null)
+    try {
+      const amount = form.amount ? Number(form.amount) : null
+      if (amount == null || !Number.isFinite(amount) || amount <= 0) {
+        throw new Error('Enter an amount greater than zero.')
+      }
+
+      // Resolve billing entity, load, and company settings in parallel.
+      const [billToRow, loadRow, companyRow] = await Promise.all([
+        form.customer_id
+          ? supabase.from('customers').select('name, email, phone, address').eq('id', form.customer_id).maybeSingle()
+          : form.broker_id
+            ? supabase.from('brokers').select('name, email, phone').eq('id', form.broker_id).maybeSingle()
+            : Promise.resolve({ data: null, error: null }),
+        form.load_id
+          ? supabase.from('loads').select('load_number, origin_city, origin_state, dest_city, dest_state, miles').eq('id', form.load_id).maybeSingle()
+          : Promise.resolve({ data: null, error: null }),
+        supabase.from('company_settings')
+          .select('company_name, logo_path, address, city, state, zip, phone, email, mc_number, dot_number, ein')
+          .limit(1).maybeSingle(),
+      ])
+
+      const company = companyRow.data as CompanySettings | null
+      const { generateInvoicePdf, logoToDataUrl, measureDataUrl } = await import('../lib/invoicePdf')
+      let logoDataUrl: string | null = null
+      let logoDims: { w: number; h: number } | null = null
+      if (company?.logo_path) {
+        const { data } = await supabase.storage.from('branding').createSignedUrl(company.logo_path, 3600)
+        logoDataUrl = data?.signedUrl ? await logoToDataUrl(data.signedUrl) : null
+        logoDims    = logoDataUrl ? await measureDataUrl(logoDataUrl) : null
+      }
+
+      const bt = billToRow.data as { name: string; email?: string | null; phone?: string | null; address?: string | null } | null
+      const lo = loadRow.data   as { load_number: string | null; origin_city: string | null; origin_state: string | null; dest_city: string | null; dest_state: string | null; miles: number | null } | null
+
+      const loadLabel = lo?.load_number || (form.load_id ? `#${form.load_id.slice(0, 8)}` : '—')
+      const origin    = lo ? [lo.origin_city, lo.origin_state].filter(Boolean).join(', ') : ''
+      const dest      = lo ? [lo.dest_city,   lo.dest_state].filter(Boolean).join(', ')   : ''
+      const routeDesc = origin && dest ? `${loadLabel} · ${origin} → ${dest}` : lo ? `Load ${loadLabel}` : 'Transportation services'
+
+      const invoiceLabel = form.invoice_number || 'Preview'
+      const blob = generateInvoicePdf({
+        invoice: {
+          number:     invoiceLabel,
+          issuedDate: form.issued_date || null,
+          dueDate:    form.due_date    || null,
+          status:     form.status,
+          notes:      form.notes || null,
+        },
+        company: {
+          name:       company?.company_name ?? 'Driven Transportation',
+          logoDataUrl,
+          logoWidth:  logoDims?.w ?? null,
+          logoHeight: logoDims?.h ?? null,
+          address:    company?.address    ?? null,
+          city:       company?.city       ?? null,
+          state:      company?.state      ?? null,
+          zip:        company?.zip        ?? null,
+          phone:      company?.phone      ?? null,
+          email:      company?.email      ?? null,
+          mc_number:  company?.mc_number  ?? null,
+          dot_number: company?.dot_number ?? null,
+          ein:        company?.ein        ?? null,
+        },
+        billTo: bt ? { name: bt.name, email: bt.email ?? null, phone: bt.phone ?? null, address: (bt as { address?: string | null }).address ?? null } : null,
+        lineItems: [{ description: routeDesc, miles: lo?.miles ?? null, amount }],
+        totalAmount: amount,
+      })
+      const safeName = invoiceLabel.replace(/[^A-Za-z0-9._-]/g, '_')
+      const url = URL.createObjectURL(blob)
+      setPreview({ url, fileName: `Invoice-${safeName}.pdf` })
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setPreviewBusy(false)
+    }
+  }
 
   const save = useMutation({
     mutationFn: async () => {
@@ -843,12 +931,30 @@ export function InvoiceFormSheet({ driverId, editing, onClose }: {
 
         {error && <p className="mt-3 text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
 
-        <button onClick={() => save.mutate()} disabled={save.isPending}
-          className="w-full mt-5 py-3.5 rounded-xl text-white text-base font-semibold disabled:opacity-50 cursor-pointer"
-          style={{ background: 'var(--color-brand-500)' }}>
-          {save.isPending ? 'Saving…' : isEdit ? 'Save Changes' : 'Create Invoice'}
-        </button>
+        <div className="grid grid-cols-2 gap-2 mt-5">
+          <button
+            onClick={openPreview}
+            disabled={previewBusy || save.isPending}
+            className="py-3 rounded-xl border text-base font-semibold disabled:opacity-50 cursor-pointer bg-white active:bg-gray-50"
+            style={{ borderColor: 'var(--color-border-subtle)', color: 'var(--color-text-primary)' }}
+          >
+            {previewBusy ? 'Rendering…' : 'Preview PDF'}
+          </button>
+          <button onClick={() => save.mutate()} disabled={save.isPending}
+            className="py-3 rounded-xl text-white text-base font-semibold disabled:opacity-50 cursor-pointer"
+            style={{ background: 'var(--color-brand-500)' }}>
+            {save.isPending ? 'Saving…' : isEdit ? 'Save Changes' : 'Create Invoice'}
+          </button>
+        </div>
       </div>
+      {preview && (
+        <DocViewer
+          url={preview.url}
+          mimeType="application/pdf"
+          fileName={preview.fileName}
+          onClose={() => setPreview(null)}
+        />
+      )}
     </div>
   )
 }

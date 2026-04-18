@@ -85,8 +85,65 @@ export async function generateInvoicePdf(invoiceId: string): Promise<Blob> {
     .maybeSingle()
 
   const logoDataUrl = await loadLogoDataUrl((company as CompanyRow | null)?.logo_path ?? null)
+  const logoSize    = logoDataUrl ? await measureImage(logoDataUrl) : null
 
-  return render(invoice, company as CompanyRow | null, logoDataUrl)
+  return render(invoice, company as CompanyRow | null, logoDataUrl, logoSize)
+}
+
+// Preview a yet-unsaved invoice from the in-memory form state. Fetches
+// the referenced broker / customer / load by id (or accepts them inline if
+// already loaded in the caller) so the preview matches the final saved
+// PDF exactly. Returns a Blob the caller can URL.createObjectURL() into a
+// new tab without persisting anything to the database.
+export interface InvoicePreviewInput {
+  invoice_number: string | null
+  amount:         number | null
+  issued_date:    string | null
+  due_date:       string | null
+  status:         string
+  notes:          string | null
+  load_id:        string | null
+  broker_id:      string | null
+  customer_id:    string | null
+}
+
+export async function previewInvoicePdf(input: InvoicePreviewInput): Promise<Blob> {
+  // Resolve the referenced rows in parallel. Each is optional.
+  const [loadRes, brokerRes, customerRes, companyRes] = await Promise.all([
+    input.load_id
+      ? supabase.from('loads').select('id, load_number, origin_city, origin_state, dest_city, dest_state, miles, rate, pickup_at, deliver_by').eq('id', input.load_id).maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+    input.broker_id
+      ? supabase.from('brokers').select('id, name, mc_number, phone, email').eq('id', input.broker_id).maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+    input.customer_id
+      ? supabase.from('customers').select('id, name, contact_name, phone, email, address').eq('id', input.customer_id).maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+    supabase.from('company_settings')
+      .select('company_name, logo_path, factoring_email, address, city, state, zip, phone, email, mc_number, dot_number, ein')
+      .limit(1).maybeSingle(),
+  ])
+
+  const invoice: InvoiceRow = {
+    id: 'preview',
+    invoice_number: input.invoice_number,
+    amount:         input.amount,
+    issued_date:    input.issued_date,
+    due_date:       input.due_date,
+    paid_date:      null,
+    status:         input.status,
+    notes:          input.notes,
+    load_id:        input.load_id,
+    broker_id:      input.broker_id,
+    customer_id:    input.customer_id,
+    loads:     (loadRes.data     ?? null) as InvoiceRow['loads'],
+    brokers:   (brokerRes.data   ?? null) as InvoiceRow['brokers'],
+    customers: (customerRes.data ?? null) as InvoiceRow['customers'],
+  }
+
+  const logoDataUrl = await loadLogoDataUrl((companyRes.data as CompanyRow | null)?.logo_path ?? null)
+  const logoSize    = logoDataUrl ? await measureImage(logoDataUrl) : null
+  return render(invoice, companyRes.data as CompanyRow | null, logoDataUrl, logoSize)
 }
 
 // Same but triggers a browser download.
@@ -108,7 +165,18 @@ export async function downloadInvoicePdf(invoiceId: string, filename?: string): 
 const PAGE_W = 612  // 8.5 × 72
 const MARGIN = 48
 
-function render(invoice: InvoiceRow, company: CompanyRow | null, logoDataUrl: string | null): Blob {
+// Measure an image without mutating DOM. Returns natural width/height so we
+// can letterbox the logo into a fixed bounding box without squashing it.
+async function measureImage(dataUrl: string): Promise<{ w: number; h: number } | null> {
+  return new Promise(resolve => {
+    const img = new Image()
+    img.onload  = () => resolve({ w: img.naturalWidth, h: img.naturalHeight })
+    img.onerror = () => resolve(null)
+    img.src = dataUrl
+  })
+}
+
+function render(invoice: InvoiceRow, company: CompanyRow | null, logoDataUrl: string | null, logoSize: { w: number; h: number } | null): Blob {
   const doc = new jsPDF({ unit: 'pt', format: 'letter' })
   doc.setFont('helvetica')
 
@@ -118,9 +186,19 @@ function render(invoice: InvoiceRow, company: CompanyRow | null, logoDataUrl: st
   // ── Header ───────────────────────────────────────────────────────────────
   let cursorY = MARGIN
 
+  // Logo: letterbox into an 84×72pt box so tall-narrow marks (like an arch
+  // over a wordmark) keep their proportions instead of being squashed into
+  // a square.
+  let logoHeightUsed = 0
   if (logoDataUrl) {
+    const BOX_W = 84, BOX_H = 72
+    const nat = logoSize ?? { w: BOX_W, h: BOX_H }
+    const scale = Math.min(BOX_W / nat.w, BOX_H / nat.h)
+    const drawW = Math.max(1, nat.w * scale)
+    const drawH = Math.max(1, nat.h * scale)
     try {
-      doc.addImage(logoDataUrl, 'PNG', MARGIN, cursorY, 64, 64, undefined, 'FAST')
+      doc.addImage(logoDataUrl, 'PNG', MARGIN, cursorY, drawW, drawH, undefined, 'FAST')
+      logoHeightUsed = drawH
     } catch { /* ignore bad image data */ }
   }
 
@@ -137,7 +215,7 @@ function render(invoice: InvoiceRow, company: CompanyRow | null, logoDataUrl: st
   }
 
   // Company block (left, below logo)
-  cursorY += logoDataUrl ? 76 : 28
+  cursorY += logoDataUrl ? Math.max(logoHeightUsed, 12) + 12 : 28
   doc.setTextColor(0).setFontSize(14).setFont('helvetica', 'bold')
   doc.text(companyName, MARGIN, cursorY)
   cursorY += 14
