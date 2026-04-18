@@ -8,6 +8,7 @@ import { Brokers } from './screens/Brokers'
 import { Expenses } from './screens/Expenses'
 import { Invoices } from './screens/Invoices'
 import { Profile } from './screens/Profile'
+import { DriverMode } from './screens/DriverMode'
 import { TabBar, type TabKey, TABS } from './components/TabBar'
 import { registerPushForUser } from './lib/push'
 
@@ -50,6 +51,7 @@ function Shell({ tab, setTab, userId, email }: {
 }) {
   const { data: driver, isLoading, error } = useDriver(userId, email)
   const [brokersOpen, setBrokersOpen] = useState(false)
+  const [driverModeOpen, setDriverModeOpen] = useState(false)
 
   if (isLoading) {
     return (
@@ -73,7 +75,7 @@ function Shell({ tab, setTab, userId, email }: {
         <h1 className="text-3xl font-bold text-gray-900">{label}</h1>
       </header>
       <main className="px-4 pb-28">
-        {tab === 'home'     && <Home driver={driver} onGoToLoads={() => setTab('loads')} />}
+        {tab === 'home'     && <Home driver={driver} onGoToLoads={() => setTab('loads')} onOpenDriverMode={() => setDriverModeOpen(true)} />}
         {tab === 'loads'    && <Loads driver={driver} />}
         {tab === 'expenses' && <Expenses />}
         {tab === 'invoices' && <Invoices driver={driver} />}
@@ -90,6 +92,9 @@ function Shell({ tab, setTab, userId, email }: {
             <Brokers />
           </div>
         </div>
+      )}
+      {driverModeOpen && (
+        <DriverMode driver={driver} onExit={() => setDriverModeOpen(false)} />
       )}
     </div>
   )

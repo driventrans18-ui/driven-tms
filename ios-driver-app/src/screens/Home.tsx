@@ -114,7 +114,9 @@ function Summary({ driverId }: { driverId: string }) {
   )
 }
 
-export function Home({ driver, onGoToLoads }: { driver: Driver; onGoToLoads: () => void }) {
+export function Home({ driver, onGoToLoads, onOpenDriverMode }: {
+  driver: Driver; onGoToLoads: () => void; onOpenDriverMode: () => void
+}) {
   const qc = useQueryClient()
 
   const { data: activeLoad } = useQuery({
@@ -201,6 +203,17 @@ export function Home({ driver, onGoToLoads }: { driver: Driver; onGoToLoads: () 
         <div>
           <h2 className="px-1 text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Active load</h2>
           <LoadCard load={activeLoad} onTap={onGoToLoads} />
+          <button
+            type="button"
+            onClick={onOpenDriverMode}
+            aria-label="Open Driver Mode"
+            className="mt-2 w-full min-h-14 rounded-2xl bg-[#c8410a] text-white text-base font-semibold active:opacity-90 cursor-pointer flex items-center justify-center gap-2"
+          >
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <path d="M3 11l18-8-8 18-2-8-8-2z" />
+            </svg>
+            Driver Mode
+          </button>
         </div>
       ) : (
         <div className="bg-white rounded-2xl p-6 text-center">
