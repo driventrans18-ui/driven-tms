@@ -12,8 +12,10 @@ export const TABS: { key: TabKey; label: string; icon: ReactNode }[] = [
 
 export function TabBar({ active, onChange }: { active: TabKey; onChange: (k: TabKey) => void }) {
   return (
+    // Rendered as a flex child of the viewport-fixed shell in App.tsx so iOS
+    // WKWebView overscroll can't rubber-band the bar off-screen.
     <nav
-      className="fixed left-0 right-0 bottom-0 z-40 bg-white/90 backdrop-blur border-t border-gray-200"
+      className="shrink-0 bg-white/90 backdrop-blur border-t border-gray-200"
       style={{ paddingBottom: 'env(safe-area-inset-bottom, 0)' }}
     >
       <ul className="grid grid-cols-5">

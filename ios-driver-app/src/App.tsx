@@ -70,11 +70,18 @@ function Shell({ tab, setTab, userId, email }: {
   const label = TABS.find(t => t.key === tab)?.label ?? ''
 
   return (
-    <div className="min-h-screen bg-[#f2f2f7]" style={{ paddingTop: 'env(safe-area-inset-top, 0)' }}>
-      <header className="px-4 pt-4 pb-3">
+    // Fixed flex column owns the full viewport. The TabBar is a normal flex
+    // child at the bottom rather than position:fixed — that prevents iOS
+    // WKWebView from rubber-banding the tab bar along with the page on
+    // overscroll. Only the <main> region scrolls internally.
+    <div
+      className="fixed inset-0 flex flex-col bg-[#f2f2f7]"
+      style={{ paddingTop: 'env(safe-area-inset-top, 0)' }}
+    >
+      <header className="px-4 pt-4 pb-3 shrink-0">
         <h1 className="text-3xl font-bold text-gray-900">{label}</h1>
       </header>
-      <main className="px-4 pb-28">
+      <main className="flex-1 overflow-y-auto px-4 pb-4">
         {tab === 'home'     && <Home driver={driver} onGoToLoads={() => setTab('loads')} onOpenDriverMode={() => setDriverModeOpen(true)} />}
         {tab === 'loads'    && <Loads driver={driver} />}
         {tab === 'expenses' && <Expenses />}
@@ -84,7 +91,7 @@ function Shell({ tab, setTab, userId, email }: {
       <TabBar active={tab} onChange={setTab} />
       {brokersOpen && (
         <div className="fixed inset-0 z-50 bg-[#f2f2f7] flex flex-col" style={{ paddingTop: 'env(safe-area-inset-top, 0)' }}>
-          <header className="px-4 pt-4 pb-3 flex items-center justify-between">
+          <header className="px-4 pt-4 pb-3 flex items-center justify-between shrink-0">
             <h1 className="text-2xl font-bold text-gray-900">Brokers</h1>
             <button onClick={() => setBrokersOpen(false)} className="text-[#c8410a] text-base font-medium cursor-pointer">Done</button>
           </header>
