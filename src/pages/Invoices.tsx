@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { AppShell } from '../components/AppShell'
-import { downloadInvoicePdf } from '../lib/invoicePdf'
+import { downloadInvoicePdf, previewInvoicePdf } from '../lib/invoicePdf'
 
 type InvoiceStatus = 'Draft' | 'Sent' | 'Overdue' | 'Paid'
 
@@ -128,6 +128,36 @@ function InvoiceModal({ onClose, editing }: { onClose: () => void; editing: Invo
     },
     onError: (e: Error) => setQaError(e.message),
   })
+
+  const [previewBusy, setPreviewBusy] = useState(false)
+
+  // Render the invoice from the current form state without saving, then
+  // open the PDF in a new tab. Useful for sanity-checking the layout and
+  // numbers before committing the row.
+  async function openPreview() {
+    setPreviewBusy(true); setError(null)
+    try {
+      const blob = await previewInvoicePdf({
+        invoice_number: form.invoice_number || null,
+        amount:         form.amount ? Number(form.amount) : null,
+        issued_date:    form.issued_date || null,
+        due_date:       form.due_date || null,
+        status:         form.status,
+        notes:          form.notes || null,
+        load_id:        form.load_id || null,
+        broker_id:      billTo === 'broker'   ? (form.broker_id   || null) : null,
+        customer_id:    billTo === 'customer' ? (form.customer_id || null) : null,
+      })
+      const url = URL.createObjectURL(blob)
+      window.open(url, '_blank', 'noopener')
+      // Revoke after a grace period so the new tab has time to load the blob.
+      setTimeout(() => URL.revokeObjectURL(url), 60_000)
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setPreviewBusy(false)
+    }
+  }
 
   const mutation = useMutation({
     mutationFn: async () => {
@@ -291,12 +321,22 @@ function InvoiceModal({ onClose, editing }: { onClose: () => void; editing: Invo
           </div>
         </div>
         {error && <p className="mt-3 text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
-        <div className="flex justify-end gap-2 mt-5">
-          <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 cursor-pointer">Cancel</button>
-          <button onClick={() => mutation.mutate()} disabled={mutation.isPending}
-            className="px-4 py-2 text-sm text-white rounded-lg disabled:opacity-50 cursor-pointer" style={{ background: 'var(--color-brand-500)' }}>
-            {mutation.isPending ? 'Saving…' : editing ? 'Save Changes' : 'Create Invoice'}
+        <div className="flex items-center justify-between gap-2 mt-5">
+          <button
+            onClick={openPreview}
+            disabled={previewBusy || mutation.isPending}
+            className="px-4 py-2 text-sm rounded-lg border cursor-pointer disabled:opacity-50"
+            style={{ borderColor: 'var(--color-border-subtle)', color: 'var(--color-text-primary)' }}
+          >
+            {previewBusy ? 'Rendering…' : 'Preview PDF'}
           </button>
+          <div className="flex gap-2">
+            <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 cursor-pointer">Cancel</button>
+            <button onClick={() => mutation.mutate()} disabled={mutation.isPending}
+              className="px-4 py-2 text-sm text-white rounded-lg disabled:opacity-50 cursor-pointer" style={{ background: 'var(--color-brand-500)' }}>
+              {mutation.isPending ? 'Saving…' : editing ? 'Save Changes' : 'Create Invoice'}
+            </button>
+          </div>
         </div>
       </div>
     </div>
