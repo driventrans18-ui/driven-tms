@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { cacheGet, cacheSet } from '../lib/cache'
-import { captureBol, uploadBol } from '../lib/bolDocuments'
+import { uploadBol } from '../lib/bolDocuments'
 import { captureStampedPhoto } from '../lib/stampedCamera'
 import { LoadCard, type LoadCardLoad } from '../components/LoadCard'
 import { ExpirationsCard } from '../components/ExpirationsCard'
@@ -10,6 +10,9 @@ import { LoadCalendar } from '../components/LoadCalendar'
 import type { Driver } from '../hooks/useDriver'
 
 const ACTIVE_STATUSES = ['Assigned', 'In Transit']
+
+type LoadStatus = 'Assigned' | 'In Transit' | 'Delivered'
+const QUICK_STATUSES: LoadStatus[] = ['Assigned', 'In Transit', 'Delivered']
 
 type Range = 'week' | 'month' | 'year'
 
@@ -143,70 +146,45 @@ export function Home({ driver, onGoToLoads, onOpenDriverMode }: {
     if (activeLoad) cacheSet(`active-load:${driver.id}`, activeLoad)
   }, [activeLoad, driver.id])
 
-  const markDelivered = useMutation({
-    mutationFn: async (loadId: string) => {
-      const { error } = await supabase.from('loads').update({ status: 'Delivered' }).eq('id', loadId)
+  const setStatus = useMutation({
+    mutationFn: async ({ loadId, status }: { loadId: string; status: LoadStatus }) => {
+      const { error } = await supabase.from('loads').update({ status }).eq('id', loadId)
       if (error) throw error
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['active-load', driver.id] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['active-load', driver.id] })
+      qc.invalidateQueries({ queryKey: ['my-loads', driver.id] })
+      qc.invalidateQueries({ queryKey: ['driver-summary', driver.id] })
+      qc.invalidateQueries({ queryKey: ['calendar-loads', driver.id] })
+    },
     onError: (e: Error) => alert(e.message),
   })
 
-  const checkIn = useMutation({
-    mutationFn: async () => {
-      const { Geolocation } = await import('@capacitor/geolocation')
-      const pos = await Geolocation.getCurrentPosition({ enableHighAccuracy: true })
-      const { error } = await supabase.from('load_checkins').insert({
-        load_id: activeLoad?.id ?? null,
-        driver_id: driver.id,
-        latitude: pos.coords.latitude,
-        longitude: pos.coords.longitude,
-      })
+  const deleteActive = useMutation({
+    mutationFn: async (loadId: string) => {
+      const { error } = await supabase.from('loads').delete().eq('id', loadId)
       if (error) throw error
     },
-    onError: (e: Error) => alert('Check-in failed: ' + e.message),
-    onSuccess: () => alert('Checked in.'),
+    onSuccess: () => {
+      cacheSet(`active-load:${driver.id}`, null)
+      qc.invalidateQueries({ queryKey: ['active-load', driver.id] })
+      qc.invalidateQueries({ queryKey: ['my-loads', driver.id] })
+      qc.invalidateQueries({ queryKey: ['calendar-loads', driver.id] })
+    },
+    onError: (e: Error) => alert(e.message),
   })
 
-  const capturePod = useMutation({
-    mutationFn: async () => {
-      if (!activeLoad) throw new Error('No active load')
-      const { blob, filename, mimeType } = await captureBol()
-      await uploadBol({
-        loadId:  activeLoad.id,
-        loadRef: activeLoad.load_number || activeLoad.id.slice(0, 8),
-        blob, filename, mimeType,
-      })
-    },
-    onError: (e: Error) => alert('POD failed: ' + e.message),
-    onSuccess: () => alert('POD uploaded and saved to Files.'),
-  })
-
-  const pickFromFiles = useMutation({
-    mutationFn: async (file: File) => {
-      if (!activeLoad) throw new Error('No active load')
-      await uploadBol({
-        loadId:  activeLoad.id,
-        loadRef: activeLoad.load_number || activeLoad.id.slice(0, 8),
-        blob:     file,
-        filename: file.name,
-        mimeType: file.type || 'application/octet-stream',
-      })
-    },
-    onError: (e: Error) => alert('Upload failed: ' + e.message),
-    onSuccess: () => alert('Document uploaded.'),
-  })
+  const [freightPickerOpen, setFreightPickerOpen] = useState(false)
 
   const captureFreight = useMutation({
-    mutationFn: async () => {
-      if (!activeLoad) throw new Error('No active load')
+    mutationFn: async (target: { id: string; loadRef: string }) => {
       const stamped = await captureStampedPhoto()
       if (!stamped) return
       const bytes = Uint8Array.from(atob(stamped.base64), c => c.charCodeAt(0))
       const blob = new Blob([bytes], { type: stamped.mimeType })
       await uploadBol({
-        loadId:  activeLoad.id,
-        loadRef: activeLoad.load_number || activeLoad.id.slice(0, 8),
+        loadId:  target.id,
+        loadRef: target.loadRef,
         blob,
         filename: `freight-${Date.now()}.jpg`,
         mimeType: stamped.mimeType,
@@ -220,13 +198,49 @@ export function Home({ driver, onGoToLoads, onOpenDriverMode }: {
     onSuccess: () => alert('Freight photo uploaded and saved to Files.'),
   })
 
+  // Capture Freight entry point. With an active load we shoot immediately;
+  // otherwise open a picker so the driver can assign the photo to any load.
+  const startCaptureFreight = () => {
+    if (captureFreight.isPending) return
+    if (activeLoad) {
+      captureFreight.mutate({
+        id: activeLoad.id,
+        loadRef: activeLoad.load_number || activeLoad.id.slice(0, 8),
+      })
+      return
+    }
+    setFreightPickerOpen(true)
+  }
+
   return (
     <>
-    <div className="space-y-5 pb-28">
+    <div className="space-y-5 pb-6">
       {activeLoad ? (
         <div>
           <h2 className="px-1 text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Active load</h2>
           <LoadCard load={activeLoad} onTap={onGoToLoads} />
+
+          {/* Inline status changer — quickest way for the driver to flip
+              Assigned → In Transit → Delivered without opening the load. */}
+          <div className="mt-2 grid grid-cols-3 gap-1 bg-gray-100 rounded-xl p-1">
+            {QUICK_STATUSES.map(s => {
+              const on = activeLoad.status === s
+              const pending = setStatus.isPending && setStatus.variables?.status === s
+              return (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => !on && setStatus.mutate({ loadId: activeLoad.id, status: s })}
+                  disabled={setStatus.isPending}
+                  className="py-2 rounded-lg text-xs font-semibold cursor-pointer disabled:opacity-60"
+                  style={on ? { background: '#c8410a', color: 'white' } : { color: '#6b7280' }}
+                >
+                  {pending ? 'Saving…' : s}
+                </button>
+              )
+            })}
+          </div>
+
           <button
             type="button"
             onClick={onOpenDriverMode}
@@ -237,6 +251,20 @@ export function Home({ driver, onGoToLoads, onOpenDriverMode }: {
               <path d="M3 11l18-8-8 18-2-8-8-2z" />
             </svg>
             Driver Mode
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              const label = activeLoad.load_number || `#${activeLoad.id.slice(0, 8)}`
+              if (confirm(`Delete load ${label}? This cannot be undone.`)) {
+                deleteActive.mutate(activeLoad.id)
+              }
+            }}
+            disabled={deleteActive.isPending}
+            className="mt-2 w-full py-2.5 rounded-xl text-red-600 text-sm font-semibold active:bg-red-50 disabled:opacity-50 cursor-pointer"
+          >
+            {deleteActive.isPending ? 'Deleting…' : 'Delete load'}
           </button>
         </div>
       ) : (
@@ -263,8 +291,8 @@ export function Home({ driver, onGoToLoads, onOpenDriverMode }: {
           </button>
           <button
             type="button"
-            onClick={() => captureFreight.mutate()}
-            disabled={!activeLoad || captureFreight.isPending}
+            onClick={startCaptureFreight}
+            disabled={captureFreight.isPending}
             className="bg-white rounded-2xl p-4 text-left active:bg-gray-50 disabled:opacity-40 cursor-pointer flex items-center gap-3"
           >
             <span className="w-11 h-11 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center text-xl" aria-hidden>📸</span>
@@ -272,7 +300,9 @@ export function Home({ driver, onGoToLoads, onOpenDriverMode }: {
               <span className="block text-sm font-semibold text-gray-900">
                 {captureFreight.isPending ? 'Uploading…' : 'Capture Freight'}
               </span>
-              <span className="block text-[11px] text-gray-500">Time-stamped photo of cargo</span>
+              <span className="block text-[11px] text-gray-500">
+                {activeLoad ? 'Time-stamped photo of cargo' : 'Pick a load to attach to'}
+              </span>
             </span>
           </button>
         </div>
@@ -285,70 +315,95 @@ export function Home({ driver, onGoToLoads, onOpenDriverMode }: {
       <LoadCalendar driverId={driver.id} />
     </div>
 
-    {/* Fixed quick-action bar — always reachable above the tab bar. */}
-    <div
-      className="fixed left-0 right-0 z-30 bg-white/90 backdrop-blur border-t border-gray-200 px-4 pt-2"
-      style={{ bottom: 'calc(env(safe-area-inset-bottom, 0px) + 64px)' }}
-      role="toolbar"
-      aria-label="Quick actions"
-    >
-      <div className="grid grid-cols-4 gap-2 pb-2">
-        <button onClick={() => capturePod.mutate()} disabled={!activeLoad || capturePod.isPending}
-          className="bg-white rounded-xl border border-gray-100 py-2.5 text-center active:bg-gray-50 disabled:opacity-40 cursor-pointer">
-          <span className="block text-xl leading-none">📷</span>
-          <span className="block text-[11px] font-medium text-gray-700 mt-0.5">
-            {capturePod.isPending ? 'Uploading…' : 'Capture POD'}
-          </span>
-        </button>
-
-        <label
-          htmlFor="bol-files-picker"
-          aria-disabled={!activeLoad || pickFromFiles.isPending || undefined}
-          className={`bg-white rounded-xl border border-gray-100 py-2.5 text-center active:bg-gray-50 cursor-pointer ${(!activeLoad || pickFromFiles.isPending) ? 'opacity-40 pointer-events-none' : ''}`}
-        >
-          <span className="block text-xl leading-none">📁</span>
-          <span className="block text-[11px] font-medium text-gray-700 mt-0.5">
-            {pickFromFiles.isPending ? 'Uploading…' : 'From Files'}
-          </span>
-        </label>
-        <input
-          id="bol-files-picker"
-          type="file"
-          accept="image/*,application/pdf"
-          className="hidden"
-          disabled={!activeLoad || pickFromFiles.isPending}
-          onChange={e => {
-            const f = e.target.files?.[0]
-            e.target.value = ''
-            if (f) pickFromFiles.mutate(f)
-          }}
-        />
-
-        <button onClick={() => checkIn.mutate()} disabled={checkIn.isPending}
-          className="bg-white rounded-xl border border-gray-100 py-2.5 text-center active:bg-gray-50 disabled:opacity-40 cursor-pointer">
-          <span className="block text-xl leading-none">📍</span>
-          <span className="block text-[11px] font-medium text-gray-700 mt-0.5">
-            {checkIn.isPending ? 'Pinging…' : 'Check In'}
-          </span>
-        </button>
-        <button onClick={() => activeLoad && markDelivered.mutate(activeLoad.id)}
-          disabled={!activeLoad || markDelivered.isPending}
-          className="bg-white rounded-xl border border-gray-100 py-2.5 text-center active:bg-gray-50 disabled:opacity-40 cursor-pointer">
-          <span className="block text-xl leading-none">✓</span>
-          <span className="block text-[11px] font-medium text-gray-700 mt-0.5">
-            {markDelivered.isPending ? 'Saving…' : 'Mark Delivered'}
-          </span>
-        </button>
-      </div>
-    </div>
-
     {fuelSheetOpen && (
       <AddFuelSheet
         loadId={activeLoad?.id ?? null}
         onClose={() => setFuelSheetOpen(false)}
       />
     )}
+    {freightPickerOpen && (
+      <FreightLoadPicker
+        driverId={driver.id}
+        onClose={() => setFreightPickerOpen(false)}
+        onPick={(id, loadRef) => {
+          setFreightPickerOpen(false)
+          captureFreight.mutate({ id, loadRef })
+        }}
+      />
+    )}
     </>
+  )
+}
+
+// ── Freight load picker ──────────────────────────────────────────────────────
+
+// Shown when the driver taps Capture Freight without an active load. Lists
+// recent loads so they can attach the photo to one. Tapping a row closes the
+// sheet and triggers the camera.
+function FreightLoadPicker({ driverId, onClose, onPick }: {
+  driverId: string
+  onClose: () => void
+  onPick: (loadId: string, loadRef: string) => void
+}) {
+  const { data: loads = [], isLoading } = useQuery({
+    queryKey: ['freight-picker-loads', driverId],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('loads')
+        .select('id, load_number, origin_city, origin_state, dest_city, dest_state, status')
+        .eq('driver_id', driverId)
+        .order('created_at', { ascending: false })
+        .limit(25)
+      if (error) throw error
+      return (data ?? []) as Array<{
+        id: string; load_number: string | null
+        origin_city: string | null; origin_state: string | null
+        dest_city: string | null; dest_state: string | null
+        status: string
+      }>
+    },
+  })
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end" role="dialog" aria-modal="true">
+      <div className="absolute inset-0 bg-black/30" onClick={onClose} />
+      <div
+        className="relative bg-white w-full rounded-t-3xl p-6 max-h-[80vh] overflow-y-auto"
+        style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 16px) + 16px)' }}
+      >
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-bold text-gray-900">Attach freight photo to…</h2>
+          <button onClick={onClose} aria-label="Close" className="text-gray-400 text-lg cursor-pointer">✕</button>
+        </div>
+        {isLoading ? (
+          <p className="text-center text-sm text-gray-400 py-6">Loading…</p>
+        ) : loads.length === 0 ? (
+          <p className="text-center text-sm text-gray-400 py-6">No loads yet. Add one in the Loads tab.</p>
+        ) : (
+          <ul className="space-y-2">
+            {loads.map(l => {
+              const origin = [l.origin_city, l.origin_state].filter(Boolean).join(', ') || '—'
+              const dest   = [l.dest_city,   l.dest_state].filter(Boolean).join(', ') || '—'
+              const ref = l.load_number || `#${l.id.slice(0, 8)}`
+              return (
+                <li key={l.id}>
+                  <button
+                    onClick={() => onPick(l.id, l.load_number || l.id.slice(0, 8))}
+                    className="w-full text-left bg-gray-50 rounded-xl p-3 active:bg-gray-100 cursor-pointer"
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs font-semibold text-gray-500">{ref}</span>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-white text-gray-600 uppercase tracking-wide">{l.status}</span>
+                    </div>
+                    <p className="text-sm text-gray-900 font-medium truncate">{origin}</p>
+                    <p className="text-sm text-gray-900 font-medium truncate">→ {dest}</p>
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+        )}
+      </div>
+    </div>
   )
 }
 
