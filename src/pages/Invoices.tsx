@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { AppShell } from '../components/AppShell'
+import { downloadInvoicePdf } from '../lib/invoicePdf'
 
 type InvoiceStatus = 'Draft' | 'Sent' | 'Overdue' | 'Paid'
 
@@ -208,6 +209,23 @@ function InvoiceModal({ onClose, editing }: { onClose: () => void; editing: Invo
 function DetailPanel({ invoice, onClose, onEdit, onDelete, deleting }: {
   invoice: Invoice; onClose: () => void; onEdit: () => void; onDelete: () => void; deleting: boolean
 }) {
+  const [pdfBusy, setPdfBusy] = useState(false)
+  const [pdfError, setPdfError] = useState<string | null>(null)
+
+  async function handleDownload() {
+    setPdfBusy(true); setPdfError(null)
+    try {
+      const name = invoice.invoice_number
+        ? `invoice-${invoice.invoice_number}.pdf`
+        : `invoice-${invoice.id.slice(0, 8)}.pdf`
+      await downloadInvoicePdf(invoice.id, name)
+    } catch (e) {
+      setPdfError((e as Error).message)
+    } finally {
+      setPdfBusy(false)
+    }
+  }
+
   return (
     <>
       <div className="fixed inset-0 z-30 bg-black/10" onClick={onClose} />
@@ -234,6 +252,24 @@ function DetailPanel({ invoice, onClose, onEdit, onDelete, deleting }: {
               <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">Notes</p>
               <p className="text-sm text-gray-700">{invoice.notes}</p>
             </div>
+          )}
+          <button
+            onClick={handleDownload}
+            disabled={pdfBusy}
+            className="w-full px-3 py-2.5 text-sm font-medium rounded-lg border border-border-subtle bg-surface-card hover:bg-surface-muted text-text-primary disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z" />
+              <path d="M14 2v6h6" />
+              <path d="M12 12v6" />
+              <path d="M9 15l3 3 3-3" />
+            </svg>
+            {pdfBusy ? 'Generating PDF…' : 'Download PDF'}
+          </button>
+          {pdfError && (
+            <p role="alert" className="text-xs text-danger-500 bg-danger-100/50 rounded-md px-3 py-2">
+              {pdfError}
+            </p>
           )}
         </div>
         <div className="flex gap-2 px-5 py-3 border-t border-gray-100">
