@@ -183,3 +183,69 @@ export async function searchBrokerByName(name: string): Promise<BrokerNameCandid
   if (res?.error) throw new Error(res.error)
   return res.candidates ?? []
 }
+
+// ── Broker email drafter ────────────────────────────────────────────────────
+
+export type BrokerEmailIntent =
+  | 'accept' | 'detention' | 'pod' | 'payment_followup' | 'rate_counter' | 'generic'
+
+export interface BrokerEmailDraft {
+  subject:      string
+  body:         string
+  broker_email: string | null
+}
+
+// Ask Claude to draft a broker email for a specific load + intent. The
+// edge function server-side-fetches the load / broker / company rows so
+// we never ship PII in the request body.
+export async function draftBrokerEmail(args: {
+  intent:        BrokerEmailIntent
+  loadId:        string
+  extraContext?: string
+}): Promise<{ draft: BrokerEmailDraft; usage: RateConUsage }> {
+  const { data, error } = await supabase.functions.invoke('draft-broker-email', {
+    body: {
+      intent:        args.intent,
+      load_id:       args.loadId,
+      extra_context: args.extraContext ?? '',
+    },
+  })
+  if (error) throw await expandFunctionError(error, 'draft-broker-email')
+  const res = data as {
+    subject?: string; body?: string; broker_email?: string | null
+    usage?: RateConUsage; error?: string
+  }
+  if (res?.error) throw new Error(res.error)
+  if (!res?.subject || !res?.body) throw new Error('draft-broker-email returned no draft')
+  return {
+    draft: {
+      subject:      res.subject,
+      body:         res.body,
+      broker_email: res.broker_email ?? null,
+    },
+    usage: res.usage ?? { input: 0, output: 0, cache_read: 0, cache_write: 0 },
+  }
+}
+
+// ── Dock-note polisher ──────────────────────────────────────────────────────
+
+// Send a raw dictation blob to Claude Haiku for polish into a tight
+// 1-2 sentence dock note. Times / dock numbers / references stay verbatim.
+export async function polishNote(args: {
+  rawText: string
+  kind:    'pickup' | 'delivery'
+}): Promise<{ polished: string; usage: RateConUsage }> {
+  const raw = args.rawText.trim()
+  if (!raw) throw new Error('Nothing to polish')
+  const { data, error } = await supabase.functions.invoke('polish-note', {
+    body: { raw_text: raw, kind: args.kind },
+  })
+  if (error) throw await expandFunctionError(error, 'polish-note')
+  const res = data as { polished?: string; usage?: RateConUsage; error?: string }
+  if (res?.error) throw new Error(res.error)
+  if (!res?.polished) throw new Error('polish-note returned no result')
+  return {
+    polished: res.polished,
+    usage:    res.usage ?? { input: 0, output: 0, cache_read: 0, cache_write: 0 },
+  }
+}

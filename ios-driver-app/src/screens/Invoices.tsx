@@ -6,6 +6,7 @@ import { shareFile } from '../lib/share'
 import { DocViewer } from '../components/DocViewer'
 import { SwipeRow } from '../components/SwipeRow'
 import { ScreenHeader, PlusButton } from '../components/ScreenHeader'
+import { EmailBrokerSheet } from '../components/EmailBrokerSheet'
 import type { Driver } from '../hooks/useDriver'
 
 type InvoiceStatus = 'Draft' | 'Sent' | 'Overdue' | 'Paid'
@@ -398,6 +399,7 @@ function InvoiceSheet({ invoice, driverId, onClose }: {
   const [logoUrl, setLogoUrl] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState<'share' | 'preview' | 'email' | 'sms' | null>(null)
+  const [brokerEmailOpen, setBrokerEmailOpen] = useState(false)
   const [preview, setPreview] = useState<{ url: string; fileName: string } | null>(null)
 
   const { data: settings } = useQuery({
@@ -746,6 +748,16 @@ function InvoiceSheet({ invoice, driverId, onClose }: {
           Email and Text open Mail / Messages with a secure download link pre-filled. Share PDF attaches the file via iOS's share sheet.
         </p>
 
+        {invoice.status !== 'Paid' && invoice.load_id && invoice.brokers && (
+          <button
+            onClick={() => setBrokerEmailOpen(true)}
+            className="w-full mt-2 py-3 rounded-xl text-base font-semibold cursor-pointer border"
+            style={{ borderColor: 'var(--color-brand-500)', color: 'var(--color-brand-500)' }}
+          >
+            Draft payment follow-up with Claude
+          </button>
+        )}
+
         {invoice.status !== 'Paid' && (
           <button
             onClick={() => markPaid.mutate()}
@@ -776,6 +788,15 @@ function InvoiceSheet({ invoice, driverId, onClose }: {
           mimeType="application/pdf"
           fileName={preview.fileName}
           onClose={() => setPreview(null)}
+        />
+      )}
+      {brokerEmailOpen && invoice.load_id && invoice.brokers && (
+        <EmailBrokerSheet
+          loadId={invoice.load_id}
+          loadLabel={invoice.invoice_number || `Invoice ${invoice.id.slice(0, 8)}`}
+          brokerName={invoice.brokers.name}
+          initialIntent="payment_followup"
+          onClose={() => setBrokerEmailOpen(false)}
         />
       )}
     </div>

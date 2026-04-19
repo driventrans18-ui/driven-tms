@@ -10,8 +10,9 @@ import { isDocScanAvailable, scanDocument } from '../lib/docScan'
 import { captureStampedPhoto } from '../lib/stampedCamera'
 import { uploadBol } from '../lib/bolDocuments'
 import { estimateMiles } from '../lib/estimateMiles'
-import { parseRateCon, type RateConPrefill } from '../lib/ai'
+import { parseRateCon, polishNote, type RateConPrefill } from '../lib/ai'
 import { buildMapsUrl } from '../hooks/useMapsPref'
+import { EmailBrokerSheet } from '../components/EmailBrokerSheet'
 import type { Driver } from '../hooks/useDriver'
 
 type DocKind = 'rate_con' | 'pod' | 'freight' | 'other'
@@ -180,6 +181,7 @@ function LoadSheet({ load, driverId, onClose }: { load: LoadDetail; driverId: st
   const qc = useQueryClient()
   const origin = [load.origin_city, load.origin_state].filter(Boolean).join(', ')
   const dest   = [load.dest_city,   load.dest_state].filter(Boolean).join(', ')
+  const [emailOpen, setEmailOpen] = useState(false)
 
   const deleteLoad = useMutation({
     mutationFn: async () => {
@@ -266,6 +268,16 @@ function LoadSheet({ load, driverId, onClose }: { load: LoadDetail; driverId: st
           </a>
         )}
 
+        {load.brokers && (
+          <button
+            onClick={() => setEmailOpen(true)}
+            className="w-full mt-2 py-3 rounded-xl text-base font-semibold border cursor-pointer"
+            style={{ borderColor: 'var(--color-brand-500)', color: 'var(--color-brand-500)' }}
+          >
+            Email broker (draft with Claude)
+          </button>
+        )}
+
         <button
           onClick={confirmDelete}
           disabled={deleteLoad.isPending}
@@ -274,6 +286,14 @@ function LoadSheet({ load, driverId, onClose }: { load: LoadDetail; driverId: st
           {deleteLoad.isPending ? 'Deleting…' : 'Delete load'}
         </button>
       </div>
+      {emailOpen && load.brokers && (
+        <EmailBrokerSheet
+          loadId={load.id}
+          loadLabel={load.load_number || `#${load.id.slice(0, 8)}`}
+          brokerName={load.brokers.name}
+          onClose={() => setEmailOpen(false)}
+        />
+      )}
     </div>
   )
 }
@@ -767,16 +787,20 @@ function LoadFormSheet({ driverId, editing, onClose }: {
               <input value={form.receiver_name} onChange={e => set('receiver_name', e.target.value)} placeholder="Target Regional"
                 className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-base" />
             </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Pickup notes</label>
-              <input value={form.pickup_notes} onChange={e => set('pickup_notes', e.target.value)} placeholder="Shipper notes"
-                className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-base" />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Delivery notes</label>
-              <input value={form.delivery_notes} onChange={e => set('delivery_notes', e.target.value)} placeholder="Receiver notes"
-                className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-base" />
-            </div>
+            <NotesPolishField
+              label="Pickup notes"
+              placeholder="Dictate with the iOS mic and tap ✨ to polish"
+              value={form.pickup_notes}
+              onChange={v => set('pickup_notes', v)}
+              kind="pickup"
+            />
+            <NotesPolishField
+              label="Delivery notes"
+              placeholder="Dictate with the iOS mic and tap ✨ to polish"
+              value={form.delivery_notes}
+              onChange={v => set('delivery_notes', v)}
+              kind="delivery"
+            />
 
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Trailer</label>
@@ -835,6 +859,79 @@ function LoadFormSheet({ driverId, editing, onClose }: {
         />
       )}
     </>
+  )
+}
+
+// ── Notes polish field ───────────────────────────────────────────────────────
+// Textarea plus a Claude-powered ✨ polish button. iOS's keyboard mic
+// handles dictation (no extra code); this field's job is to clean up the
+// resulting ramble into 1-2 tight sentences. The polished result replaces
+// the textarea content; a 10-second "undo" link restores the original in
+// case Claude drops something the driver actually wanted.
+function NotesPolishField({ label, placeholder, value, onChange, kind }: {
+  label:       string
+  placeholder: string
+  value:       string
+  onChange:    (v: string) => void
+  kind:        'pickup' | 'delivery'
+}) {
+  const [prev, setPrev]     = useState<string | null>(null)
+  const [busy, setBusy]     = useState(false)
+  const [error, setError]   = useState<string | null>(null)
+
+  async function runPolish() {
+    const raw = value.trim()
+    if (raw.length < 20 || busy) return
+    setBusy(true); setError(null)
+    try {
+      const { polished } = await polishNote({ rawText: raw, kind })
+      setPrev(value)
+      onChange(polished)
+      // Undo auto-expires after 10s so the button doesn't linger forever.
+      setTimeout(() => setPrev(p => (p === raw ? null : p)), 10_000)
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1">
+        <label className="block text-xs font-medium text-gray-600">{label}</label>
+        <div className="flex items-center gap-2">
+          {prev !== null && (
+            <button
+              type="button"
+              onClick={() => { onChange(prev); setPrev(null) }}
+              className="text-xs text-gray-500 underline cursor-pointer"
+            >
+              Undo
+            </button>
+          )}
+          {value.trim().length >= 20 && (
+            <button
+              type="button"
+              onClick={runPolish}
+              disabled={busy}
+              className="text-xs font-semibold disabled:opacity-50 cursor-pointer"
+              style={{ color: 'var(--color-brand-500)' }}
+            >
+              {busy ? 'Polishing…' : '✨ Polish'}
+            </button>
+          )}
+        </div>
+      </div>
+      <textarea
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        placeholder={placeholder}
+        rows={2}
+        className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-base"
+      />
+      {error && <p className="text-[11px] text-red-600 mt-1">{error}</p>}
+    </div>
   )
 }
 
