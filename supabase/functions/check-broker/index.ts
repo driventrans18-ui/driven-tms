@@ -43,7 +43,7 @@ Deno.serve(async (req) => {
   // Callers discriminate on the body shape.
   if (req.method !== 'POST') return json({ error: 'POST required' })
 
-  let body: { mc_number?: string; dot_number?: string }
+  let body: { mc_number?: string; dot_number?: string; debug?: boolean }
   try {
     body = await req.json()
   } catch {
@@ -52,6 +52,7 @@ Deno.serve(async (req) => {
 
   const mc  = (body.mc_number  ?? '').replace(/\D/g, '')
   const dot = (body.dot_number ?? '').replace(/\D/g, '')
+  const debug = body.debug === true
   if (!mc && !dot) return json({ error: 'mc_number or dot_number required' })
 
   // SAFER carrier snapshot. The form that drives this page uses POST, not
@@ -82,13 +83,32 @@ Deno.serve(async (req) => {
     }
     const html = await res.text()
 
-    // SAFER shows "Record Not Found" or "Record Inactive" when the
-    // MC/DOT doesn't resolve to a live carrier.
+    // Debug mode — returns a chunk of HTML around each key label so we
+    // can see the actual markup surrounding the values we want to
+    // extract. Call with { "mc_number": "...", "debug": true }.
+    if (debug) {
+      const around = (label: string, before = 100, after = 400): string | null => {
+        const idx = html.toLowerCase().indexOf(label.toLowerCase())
+        if (idx === -1) return null
+        return html.slice(Math.max(0, idx - before), idx + after)
+      }
+      return json({
+        html_length: html.length,
+        around_legal_name:      around('Legal Name'),
+        around_dba_name:        around('DBA Name'),
+        around_physical_addr:   around('Physical Address'),
+        around_phone:           around('Phone'),
+        around_operating_status: around('Operating Status'),
+        around_entity_type:     around('Entity Type'),
+        around_power_units:     around('Power Units'),
+        around_drivers:         around('Drivers'),
+        around_out_of_service:  around('Out of Service'),
+      })
+    }
+
     if (/Record Not Found/i.test(html)) {
       return json({ error: 'No FMCSA record for that MC/DOT number' })
     }
-    // If we didn't get the snapshot markup at all, hand back a tiny slice
-    // of the response so the client can see what SAFER actually sent.
     if (!/Legal Name/i.test(html)) {
       const preview = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200)
       return json({ error: `SAFER returned an unexpected page: ${preview || '(empty)'}` })
