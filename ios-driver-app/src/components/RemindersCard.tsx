@@ -22,6 +22,7 @@ type Kind =
   | 'ucr'
   | 'ifta_decal'
   | 'drug_alcohol_consortium'
+  | 'other'
 
 type EntityType = 'driver' | 'truck' | 'company'
 
@@ -51,7 +52,13 @@ const KIND_LABEL: Record<Kind, string> = {
   ucr: 'UCR',
   ifta_decal: 'IFTA Decal',
   drug_alcohol_consortium: 'D&A Consortium',
+  other: 'Other',
 }
+
+// Only reminders coming due within this window show in the card; keeps
+// the list focused on what actually needs attention. Overdue items are
+// always shown regardless of how far past they are.
+const SHOW_WITHIN_DAYS = 60
 
 const KIND_OPTIONS = Object.entries(KIND_LABEL) as Array<[Kind, string]>
 
@@ -109,15 +116,17 @@ export function RemindersCard({ driverId }: { driverId: string }) {
     onError: (e: Error) => alert(e.message),
   })
 
-  // Items with a paid_date sink to the bottom; the rest sort by due date
-  // ascending so overdue → soon appears first.
-  const sorted = [...items].sort((a, b) => {
-    const ap = !!a.paid_date, bp = !!b.paid_date
-    if (ap !== bp) return ap ? 1 : -1
-    return a.expires_at.localeCompare(b.expires_at)
+  // Hide anything unpaid that's still more than SHOW_WITHIN_DAYS out, so
+  // the card doesn't balloon with items six months away. Paid rows are
+  // hidden too — their only use is history, which lives on a dedicated
+  // screen. Overdue stays visible forever.
+  const visible = items.filter(i => {
+    if (i.paid_date) return false
+    return daysLeft(i.expires_at) <= SHOW_WITHIN_DAYS
   })
+  const sorted = [...visible].sort((a, b) => a.expires_at.localeCompare(b.expires_at))
 
-  const attention = items.filter(i => !i.paid_date && daysLeft(i.expires_at) <= 90).length
+  const attention = visible.filter(i => daysLeft(i.expires_at) <= 30).length
 
   return (
     <div>
@@ -135,7 +144,9 @@ export function RemindersCard({ driverId }: { driverId: string }) {
               <path d="M10.3 21a1.94 1.94 0 003.4 0" />
             </svg>
           </div>
-          <p className="text-sm text-gray-500">No reminders yet.</p>
+          <p className="text-sm text-gray-500">
+            {items.length === 0 ? 'No reminders yet.' : 'Nothing due in the next 2 months.'}
+          </p>
         </div>
       ) : (
         <ul className="space-y-2">
