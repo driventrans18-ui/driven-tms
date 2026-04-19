@@ -270,13 +270,15 @@ interface NameCandidate {
 // in a picker. The user then picks one and we re-query by DOT# for the
 // full snapshot via the existing queryCarrierSnapshot branch.
 async function searchByName(name: string): Promise<NameCandidate[]> {
+  // SAFER's public name search lives at keywordx.asp. It expects the search
+  // term wrapped in asterisks (e.g. *walmart*) as a POST form field called
+  // `searchstring`. The query.asp endpoint does NOT do name search despite
+  // accepting a NAME query_param — that's for internal admin use.
   const form = new URLSearchParams({
-    searchtype:   'ANY',
-    query_type:   'queryCarrierName',
-    query_param:  'NAME',
-    query_string: name,
+    searchstring: `*${name.replace(/\*/g, '')}*`,
+    SEARCHTYPE:   'NAME',
   })
-  const res = await fetch('https://safer.fmcsa.dot.gov/query.asp', {
+  const res = await fetch('https://safer.fmcsa.dot.gov/keywordx.asp', {
     method: 'POST',
     headers: {
       'User-Agent':    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15',
@@ -288,25 +290,35 @@ async function searchByName(name: string): Promise<NameCandidate[]> {
   })
   if (!res.ok) throw new Error(`SAFER returned ${res.status}`)
   const html = await res.text()
-  if (/Record Not Found/i.test(html) || /No records? match/i.test(html)) return []
+  if (/No records? match|Record Not Found|Too many records/i.test(html)) return []
 
-  // SAFER's name-results page lists each match as:
-  //   <a href="query.asp?...query_param=USDOT&query_string=XXXXXX">NAME</a>
-  //   …<b>DOT#: NNNNNN</b>  …CITY, ST
-  // We parse by iterating anchors whose href includes query_param=USDOT and
-  // whose context contains the DOT # + a CITY, ST blob.
-  const anchorRe = /<a[^>]+href="[^"]*query_param=USDOT&amp;query_string=(\d+)[^"]*"[^>]*>([^<]+)<\/a>/gi
+  // Results row pattern on keywordx.asp looks like:
+  //   <a href="query.asp?searchtype=ANY&query_type=queryCarrierSnapshot&
+  //     query_param=USDOT&original_query_string=...&query_string=NNNNN">
+  //     CARRIER NAME
+  //   </a>
+  // The anchor may use single or double quotes and the ampersand may or
+  // may not be HTML-encoded. We match either form and extract the DOT#
+  // from the final query_string param.
+  const anchorRe = /<a[^>]+href=['"]([^'"]*query_param=USDOT[^'"]*)['"][^>]*>\s*([^<]+?)\s*<\/a>/gi
   const seen = new Set<string>()
   const out: NameCandidate[] = []
   let m: RegExpExecArray | null
   while ((m = anchorRe.exec(html)) !== null) {
-    const dot = m[1]
+    const href = m[1].replace(/&amp;/g, '&')
+    // The DOT # sits in the LAST query_string= param (the first may be the
+    // echoed "original_query_string" with the user's search term).
+    const dotMatch = href.match(/[?&]query_string=(\d+)(?!.*query_string=)/)
+    if (!dotMatch) continue
+    const dot = dotMatch[1]
     if (seen.has(dot)) continue
     seen.add(dot)
     const legal = cleanText(m[2]) ?? ''
-    // Look ~400 chars after the anchor for a CITY, ST pattern.
-    const after = html.slice(m.index, m.index + 600)
-    const loc = after.match(/>\s*([A-Z][A-Z\s.&'-]{1,40},\s*[A-Z]{2})\s*</)?.[1] ?? null
+    if (!legal) continue
+    // Location (CITY, ST) usually sits a few cells to the right in the
+    // same table row. Look in the ~800 chars after the anchor.
+    const after = html.slice(m.index, m.index + 800)
+    const loc = after.match(/>\s*([A-Z][A-Z\s.&'-]{1,50},\s*[A-Z]{2})\s*</)?.[1] ?? null
     out.push({ legal_name: legal, dot_number: dot, location: loc })
     if (out.length >= 25) break
   }
