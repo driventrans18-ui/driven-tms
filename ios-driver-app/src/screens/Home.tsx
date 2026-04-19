@@ -277,8 +277,8 @@ export function Home({ driver, onGoToLoads, onOpenDriverMode }: {
             onClick={() => setFuelSheetOpen(true)}
             className="bg-white rounded-2xl p-4 text-left active:bg-gray-50 cursor-pointer flex items-center gap-3"
           >
-            <span className="w-11 h-11 rounded-xl bg-yellow-100 flex items-center justify-center overflow-hidden" aria-hidden>
-              <img src={dieselIcon} alt="" className="w-full h-full object-cover" />
+            <span className="w-11 h-11 flex items-center justify-center shrink-0" aria-hidden>
+              <img src={dieselIcon} alt="" className="w-full h-full object-contain" />
             </span>
             <span>
               <span className="block text-sm font-semibold text-gray-900">Add Fuel</span>
@@ -291,8 +291,8 @@ export function Home({ driver, onGoToLoads, onOpenDriverMode }: {
             disabled={captureFreight.isPending}
             className="bg-white rounded-2xl p-4 text-left active:bg-gray-50 disabled:opacity-40 cursor-pointer flex items-center gap-3"
           >
-            <span className="w-11 h-11 rounded-xl bg-blue-100 flex items-center justify-center overflow-hidden" aria-hidden>
-              <img src={cameraFreightIcon} alt="" className="w-full h-full object-cover" />
+            <span className="w-11 h-11 flex items-center justify-center shrink-0" aria-hidden>
+              <img src={cameraFreightIcon} alt="" className="w-full h-full object-contain" />
             </span>
             <span>
               <span className="block text-sm font-semibold text-gray-900">
@@ -308,8 +308,8 @@ export function Home({ driver, onGoToLoads, onOpenDriverMode }: {
             onClick={() => setCarrierLookupOpen(true)}
             className="bg-white rounded-2xl p-4 text-left active:bg-gray-50 cursor-pointer flex items-center gap-3 col-span-2"
           >
-            <span className="w-11 h-11 rounded-xl bg-green-100 flex items-center justify-center overflow-hidden" aria-hidden>
-              <img src={fmcsaIcon} alt="" className="w-full h-full object-cover" />
+            <span className="w-11 h-11 flex items-center justify-center shrink-0" aria-hidden>
+              <img src={fmcsaIcon} alt="" className="w-full h-full object-contain" />
             </span>
             <span>
               <span className="block text-sm font-semibold text-gray-900">Verify carrier / broker</span>
