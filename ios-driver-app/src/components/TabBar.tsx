@@ -13,10 +13,11 @@ export const TABS: { key: TabKey; label: string; icon: ReactNode }[] = [
 export function TabBar({ active, onChange }: { active: TabKey; onChange: (k: TabKey) => void }) {
   return (
     // Rendered as a flex child of the viewport-fixed shell in App.tsx so iOS
-    // WKWebView overscroll can't rubber-band the bar off-screen.
+    // WKWebView overscroll can't rubber-band the bar off-screen. The bottom
+    // padding hugs the home indicator via the safe-area inset — no extra gap.
     <nav
       className="shrink-0 bg-white/95 backdrop-blur border-t border-gray-200"
-      style={{ paddingBottom: 'env(safe-area-inset-bottom, 0)' }}
+      style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
     >
       <ul className="grid grid-cols-5">
         {TABS.map(t => {
@@ -25,7 +26,7 @@ export function TabBar({ active, onChange }: { active: TabKey; onChange: (k: Tab
             <li key={t.key}>
               <button
                 onClick={() => onChange(t.key)}
-                className="w-full flex flex-col items-center justify-center pt-2 pb-1.5 gap-0.5 cursor-pointer active:opacity-80"
+                className="w-full flex flex-col items-center justify-center pt-1.5 pb-0.5 gap-0.5 cursor-pointer active:opacity-80"
                 style={{ color: on ? 'var(--color-brand-500)' : '#8e8e93' }}
               >
                 <span className="w-7 h-7 flex items-center justify-center">{t.icon}</span>
