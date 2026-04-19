@@ -610,8 +610,9 @@ function CarrierLookupSheet({ onClose }: { onClose: () => void }) {
       if (kind === 'broker') {
         const { error } = await supabase.from('brokers').insert({
           name,
-          phone: snap.phone || null,
-          mc_number: snap.mc_number || null,
+          phone:      snap.phone        || null,
+          mc_number:  snap.mc_number    || null,
+          dot_number: snap.dot_number   || null,
         })
         if (error) throw error
         qc.invalidateQueries({ queryKey: ['brokers-simple'] })
@@ -619,8 +620,10 @@ function CarrierLookupSheet({ onClose }: { onClose: () => void }) {
       } else {
         const { error } = await supabase.from('customers').insert({
           name,
-          phone: snap.phone || null,
-          address: snap.physical_address || null,
+          phone:      snap.phone            || null,
+          address:    snap.physical_address || null,
+          mc_number:  snap.mc_number        || null,
+          dot_number: snap.dot_number       || null,
         })
         if (error) throw error
         qc.invalidateQueries({ queryKey: ['customers-simple'] })
@@ -752,7 +755,10 @@ function CarrierLookupCard({ snap }: { snap: import('../lib/ai').BrokerSnapshot 
       <div className="flex items-center justify-between mb-2">
         <span className="font-semibold text-base">{snap.legal_name || snap.dba_name || 'Unnamed carrier'}</span>
         <span className="font-mono text-xs opacity-80">
-          {snap.mc_number ? `MC# ${snap.mc_number}` : snap.dot_number ? `DOT# ${snap.dot_number}` : ''}
+          {[
+            snap.mc_number  ? `MC# ${snap.mc_number}`   : null,
+            snap.dot_number ? `DOT# ${snap.dot_number}` : null,
+          ].filter(Boolean).join(' · ')}
         </span>
       </div>
       {snap.dba_name && snap.legal_name && snap.dba_name !== snap.legal_name && (

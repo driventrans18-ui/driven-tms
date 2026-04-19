@@ -202,8 +202,15 @@ function parseSnapshot(html: string): BrokerSnapshot {
   const powerUnitsRaw = findValue('Power Units')
   const driversRaw    = findValue('Drivers')
 
+  // SAFER lists for-hire authority on the line "MC/MX/FF Number(s):". The
+  // value cell can hold one or more identifiers, e.g. "MC-123456 MX-987".
+  // Strip the "MC-" prefix so we store just the digits, matching how the
+  // rest of the app types mc_number.
+  const mcRaw = findValue('MC/MX/FF Number(s)') ?? findValue('MC/MX/FF Number')
+  const mcMatch = mcRaw?.match(/MC[-\s]?(\d+)/i)
+
   return {
-    mc_number:        null,
+    mc_number:        mcMatch ? mcMatch[1] : null,
     dot_number:       headerDot ?? findValue('USDOT Number'),
     legal_name:       headerName ?? findValue('Legal Name'),
     dba_name:         findValue('DBA Name'),
