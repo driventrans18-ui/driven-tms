@@ -592,6 +592,32 @@ export function InvoiceFormSheet({ driverId, editing, onClose }: {
   const [qaError, setQaError] = useState<string | null>(null)
   const setQa_ = (k: keyof typeof qa, v: string) => setQa(f => ({ ...f, [k]: v }))
 
+  // FMCSA verify state. Snapshot shows inline under the MC# field so the
+  // driver can eyeball authority status + OOS rates before saving.
+  const [fmcsaBusy, setFmcsaBusy] = useState(false)
+  const [fmcsaSnap, setFmcsaSnap] = useState<import('../lib/ai').BrokerSnapshot | null>(null)
+  async function verifyBroker() {
+    const mc = qa.mc.replace(/\D/g, '')
+    if (!mc) { setQaError('Enter an MC# first'); return }
+    setFmcsaBusy(true); setQaError(null); setFmcsaSnap(null)
+    try {
+      const { checkBroker } = await import('../lib/ai')
+      const snap = await checkBroker({ mc })
+      setFmcsaSnap(snap)
+      // Pre-fill name / phone / address if the driver hasn't typed anything.
+      setQa(f => ({
+        ...f,
+        name:    f.name    || snap.legal_name   || snap.dba_name || '',
+        phone:   f.phone   || snap.phone        || '',
+        address: f.address || snap.physical_address || '',
+      }))
+    } catch (e) {
+      setQaError(`FMCSA lookup failed: ${(e as Error).message}`)
+    } finally {
+      setFmcsaBusy(false)
+    }
+  }
+
   // Bill-to picker options: brokers + customers. Selecting one clears the other
   // so we never write both.
   const { data: brokers = [] } = useQuery({
@@ -861,8 +887,18 @@ export function InvoiceFormSheet({ driverId, editing, onClose }: {
                     className="w-full px-3 py-2.5 rounded-lg bg-gray-50 border border-gray-200 text-base" />
                 </div>
                 {quickAdd === 'broker' ? (
-                  <input value={qa.mc} onChange={e => setQa_('mc', e.target.value)} placeholder="MC# (optional)"
-                    className="w-full px-3 py-2.5 rounded-lg bg-gray-50 border border-gray-200 text-base" />
+                  <div className="space-y-2">
+                    <div className="flex gap-2">
+                      <input value={qa.mc} onChange={e => setQa_('mc', e.target.value)} placeholder="MC# (optional)"
+                        className="flex-1 px-3 py-2.5 rounded-lg bg-gray-50 border border-gray-200 text-base" />
+                      <button type="button" onClick={verifyBroker} disabled={fmcsaBusy || !qa.mc.trim()}
+                        className="px-3 py-2.5 rounded-lg text-sm font-semibold border disabled:opacity-50 cursor-pointer"
+                        style={{ borderColor: 'var(--color-brand-500)', color: 'var(--color-brand-500)' }}>
+                        {fmcsaBusy ? '…' : 'Verify'}
+                      </button>
+                    </div>
+                    {fmcsaSnap && <BrokerSnapshotCard snap={fmcsaSnap} />}
+                  </div>
                 ) : (
                   <input value={qa.address} onChange={e => setQa_('address', e.target.value)} placeholder="Address (optional)"
                     className="w-full px-3 py-2.5 rounded-lg bg-gray-50 border border-gray-200 text-base" />
@@ -954,6 +990,71 @@ export function InvoiceFormSheet({ driverId, editing, onClose }: {
           fileName={preview.fileName}
           onClose={() => setPreview(null)}
         />
+      )}
+    </div>
+  )
+}
+
+// Compact summary of an FMCSA carrier snapshot. Renders green if the
+// broker is clean, amber/red if any risk_flags fired (out-of-service,
+// not authorized, high out-of-service rate, etc.).
+function BrokerSnapshotCard({ snap }: { snap: import('../lib/ai').BrokerSnapshot }) {
+  const flags = snap.risk_flags
+  const hasFatal   = flags.some(f => f === 'out_of_service' || f === 'not_authorized')
+  const hasWarning = !hasFatal && flags.length > 0
+  const tone = hasFatal
+    ? { bg: 'rgb(254, 226, 226)', border: '#fca5a5', text: '#991b1b' }   // red
+    : hasWarning
+      ? { bg: 'rgb(254, 243, 199)', border: '#fcd34d', text: '#92400e' } // amber
+      : { bg: 'rgb(220, 252, 231)', border: '#86efac', text: '#14532d' } // green
+
+  const FLAG_LABEL: Record<string, string> = {
+    out_of_service:    'Out of service',
+    not_authorized:    'Not authorized',
+    high_vehicle_oos:  'High vehicle OOS rate',
+    high_driver_oos:   'High driver OOS rate',
+    no_name_on_record: 'Missing legal name',
+  }
+
+  return (
+    <div className="rounded-lg p-3 text-xs"
+      style={{ background: tone.bg, border: `1px solid ${tone.border}`, color: tone.text }}>
+      <div className="flex items-center justify-between mb-1.5">
+        <span className="font-semibold">
+          {snap.legal_name || snap.dba_name || 'Unnamed carrier'}
+        </span>
+        <span className="font-mono text-[10px] opacity-80">
+          {snap.mc_number ? `MC# ${snap.mc_number}` : snap.dot_number ? `DOT# ${snap.dot_number}` : ''}
+        </span>
+      </div>
+      {snap.operating_status && (
+        <p className="mb-0.5"><span className="opacity-70">Authority:</span> {snap.operating_status}</p>
+      )}
+      {snap.entity_type && (
+        <p className="mb-0.5"><span className="opacity-70">Entity:</span> {snap.entity_type}</p>
+      )}
+      {(snap.power_units != null || snap.drivers != null) && (
+        <p className="mb-0.5">
+          <span className="opacity-70">Fleet:</span> {snap.power_units ?? '—'} units · {snap.drivers ?? '—'} drivers
+        </p>
+      )}
+      {(snap.oos_rate_vehicle != null || snap.oos_rate_driver != null) && (
+        <p className="mb-0.5">
+          <span className="opacity-70">OOS:</span>{' '}
+          {snap.oos_rate_vehicle != null ? `vehicle ${snap.oos_rate_vehicle}%` : ''}
+          {snap.oos_rate_vehicle != null && snap.oos_rate_driver != null ? ' · ' : ''}
+          {snap.oos_rate_driver != null ? `driver ${snap.oos_rate_driver}%` : ''}
+        </p>
+      )}
+      {flags.length > 0 && (
+        <div className="mt-1.5 flex flex-wrap gap-1">
+          {flags.map(f => (
+            <span key={f} className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold"
+              style={{ background: tone.text, color: tone.bg }}>
+              {FLAG_LABEL[f] ?? f}
+            </span>
+          ))}
+        </div>
       )}
     </div>
   )

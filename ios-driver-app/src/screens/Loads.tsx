@@ -278,6 +278,20 @@ function LoadSheet({ load, driverId, onClose }: { load: LoadDetail; driverId: st
 
 // ── Load form sheet (create + edit) ──────────────────────────────────────────
 
+// Read a File into a base64 string (no data:... prefix). Used when the
+// driver picks a rate-con PDF or image from the Files app.
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const result = reader.result as string
+      resolve(result.substring(result.indexOf(',') + 1))
+    }
+    reader.onerror = () => reject(reader.error)
+    reader.readAsDataURL(file)
+  })
+}
+
 // Turn an ISO timestamp (or null) into the value `<input type="datetime-local">`
 // expects: YYYY-MM-DDTHH:MM in local time.
 function isoToLocalInput(iso: string | null): string {
@@ -384,7 +398,7 @@ function LoadFormSheet({ driverId, editing, onClose }: {
     try {
       const images = await scanDocument()
       if (images.length === 0) return
-      const { prefill, usage } = await parseRateCon(images)
+      const { prefill, usage } = await parseRateCon({ images })
       const filled = applyPrefill(prefill)
       const cached = usage.cache_read > 0 ? ' (cached)' : ''
       setScanBanner(filled > 0
@@ -393,6 +407,31 @@ function LoadFormSheet({ driverId, editing, onClose }: {
     } catch (e) {
       const msg = (e as Error).message
       if (!/cancel/i.test(msg)) setError(`Scan failed: ${msg}`)
+    } finally {
+      setScanning(false)
+    }
+  }
+
+  // Pick a rate con PDF / image from the iOS Files app (iCloud Drive, email
+  // downloads, etc.) and hand it to the edge function. Unlike scan, this is
+  // always available — even on web / simulator where the camera doesn't
+  // work, and for brokers who send rate cons as PDFs by email.
+  async function fileToPrefill(file: File) {
+    if (scanning) return
+    setScanning(true); setError(null); setScanBanner(null)
+    try {
+      const base64 = await fileToBase64(file)
+      const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')
+      const { prefill, usage } = isPdf
+        ? await parseRateCon({ pdf: base64 })
+        : await parseRateCon({ images: [base64], mimeType: file.type || 'image/jpeg' })
+      const filled = applyPrefill(prefill)
+      const cached = usage.cache_read > 0 ? ' (cached)' : ''
+      setScanBanner(filled > 0
+        ? `Auto-filled ${filled} field${filled === 1 ? '' : 's'} from ${isPdf ? 'PDF' : 'image'}${cached}. Review before saving.`
+        : `Couldn't extract any fields from that file${cached}. Enter manually.`)
+    } catch (e) {
+      setError(`Parse failed: ${(e as Error).message}`)
     } finally {
       setScanning(false)
     }
@@ -478,26 +517,56 @@ function LoadFormSheet({ driverId, editing, onClose }: {
             <button onClick={onClose} className="text-gray-400 text-lg cursor-pointer">✕</button>
           </div>
 
-          {/* Scan rate con → auto-fill. Only offered on create (editing an
-              existing load probably already has the fields) and only on
-              platforms with the native doc scanner. */}
-          {!isEdit && isDocScanAvailable() && (
-            <div className="mb-4">
-              <button
-                type="button"
-                onClick={scanToPrefill}
-                disabled={scanning}
-                className="w-full py-3 rounded-xl text-white text-base font-semibold disabled:opacity-60 cursor-pointer flex items-center justify-center gap-2"
-                style={{ background: 'var(--color-brand-500)' }}
+          {/* Scan (physical rate con) + pick from Files (PDF attachment from
+              email / iCloud Drive) — both route through the same
+              parse-rate-con edge function and merge into the form below.
+              Only offered on create; editing an existing load already has
+              the fields. */}
+          {!isEdit && (
+            <div className="mb-4 space-y-2">
+              {isDocScanAvailable() && (
+                <button
+                  type="button"
+                  onClick={scanToPrefill}
+                  disabled={scanning}
+                  className="w-full py-3 rounded-xl text-white text-base font-semibold disabled:opacity-60 cursor-pointer flex items-center justify-center gap-2"
+                  style={{ background: 'var(--color-brand-500)' }}
+                >
+                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                    <path d="M3 7V5a2 2 0 012-2h2M17 3h2a2 2 0 012 2v2M21 17v2a2 2 0 01-2 2h-2M7 21H5a2 2 0 01-2-2v-2" />
+                    <path d="M7 12h10" />
+                  </svg>
+                  {scanning ? 'Reading rate con…' : 'Scan rate con to auto-fill'}
+                </button>
+              )}
+
+              <label
+                htmlFor="ratecon-file-picker"
+                aria-disabled={scanning || undefined}
+                className={`w-full py-3 rounded-xl text-base font-semibold cursor-pointer flex items-center justify-center gap-2 border ${scanning ? 'opacity-60 pointer-events-none' : ''}`}
+                style={{ borderColor: 'var(--color-brand-500)', color: 'var(--color-brand-500)' }}
               >
                 <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                  <path d="M3 7V5a2 2 0 012-2h2M17 3h2a2 2 0 012 2v2M21 17v2a2 2 0 01-2 2h-2M7 21H5a2 2 0 01-2-2v-2" />
-                  <path d="M7 12h10" />
+                  <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+                  <path d="M14 2v6h6" />
                 </svg>
-                {scanning ? 'Reading rate con…' : 'Scan rate con to auto-fill'}
-              </button>
+                {scanning ? 'Reading…' : 'Pick rate con from Files'}
+              </label>
+              <input
+                id="ratecon-file-picker"
+                type="file"
+                accept="application/pdf,image/*"
+                className="hidden"
+                disabled={scanning}
+                onChange={e => {
+                  const f = e.target.files?.[0]
+                  e.target.value = ''
+                  if (f) fileToPrefill(f)
+                }}
+              />
+
               {scanBanner && (
-                <p className="mt-2 text-xs px-1" style={{ color: 'var(--color-brand-600)' }}>
+                <p className="text-xs px-1" style={{ color: 'var(--color-brand-600)' }}>
                   {scanBanner}
                 </p>
               )}
@@ -720,6 +789,28 @@ function QuickBrokerSheet({ onClose, onCreated }: { onClose: () => void; onCreat
   const [mc, setMc] = useState('')
   const [error, setError] = useState<string | null>(null)
 
+  // FMCSA verify: type the MC, tap Verify, pre-fill name/phone + show
+  // authority status / OOS rates inline so the user knows what they're
+  // about to save.
+  const [fmcsaBusy, setFmcsaBusy] = useState(false)
+  const [fmcsaSnap, setFmcsaSnap] = useState<import('../lib/ai').BrokerSnapshot | null>(null)
+  async function verifyBroker() {
+    const mcDigits = mc.replace(/\D/g, '')
+    if (!mcDigits) { setError('Enter an MC# first'); return }
+    setFmcsaBusy(true); setError(null); setFmcsaSnap(null)
+    try {
+      const { checkBroker } = await import('../lib/ai')
+      const snap = await checkBroker({ mc: mcDigits })
+      setFmcsaSnap(snap)
+      if (!name.trim()) setName(snap.legal_name ?? snap.dba_name ?? '')
+      if (!phone.trim()) setPhone(snap.phone ?? '')
+    } catch (e) {
+      setError(`FMCSA lookup failed: ${(e as Error).message}`)
+    } finally {
+      setFmcsaBusy(false)
+    }
+  }
+
   const save = useMutation({
     mutationFn: async () => {
       const { data, error } = await supabase.from('brokers').insert({
@@ -761,10 +852,18 @@ function QuickBrokerSheet({ onClose, onCreated }: { onClose: () => void; onCreat
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">MC #</label>
-              <input value={mc} onChange={e => setMc(e.target.value)} placeholder="MC-123456"
-                className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-base" />
+              <div className="flex gap-2">
+                <input value={mc} onChange={e => setMc(e.target.value)} placeholder="MC-123456"
+                  className="flex-1 px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-base" />
+                <button type="button" onClick={verifyBroker} disabled={fmcsaBusy || !mc.trim()}
+                  className="px-3 py-3 rounded-xl text-sm font-semibold border disabled:opacity-50 cursor-pointer"
+                  style={{ borderColor: 'var(--color-brand-500)', color: 'var(--color-brand-500)' }}>
+                  {fmcsaBusy ? '…' : 'Verify'}
+                </button>
+              </div>
             </div>
           </div>
+          {fmcsaSnap && <div className="mt-3"><BrokerSnapshotCardInline snap={fmcsaSnap} /></div>}
         </div>
         {error && <p className="mt-3 text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
         <button
@@ -1072,6 +1171,63 @@ function Row({ k, v }: { k: string; v: string }) {
     <div className="flex items-center justify-between py-1.5 border-b border-gray-100 last:border-b-0">
       <dt className="text-sm text-gray-500">{k}</dt>
       <dd className="text-base text-gray-900 font-medium">{v}</dd>
+    </div>
+  )
+}
+
+// Small FMCSA snapshot card shown inline after a Verify lookup. Mirrored
+// in Invoices.tsx so each screen can render its own without a shared
+// component (the two screens already duplicate small helpers for
+// isolation).
+function BrokerSnapshotCardInline({ snap }: { snap: import('../lib/ai').BrokerSnapshot }) {
+  const hasFatal   = snap.risk_flags.some(f => f === 'out_of_service' || f === 'not_authorized')
+  const hasWarning = !hasFatal && snap.risk_flags.length > 0
+  const tone = hasFatal
+    ? { bg: 'rgb(254, 226, 226)', border: '#fca5a5', text: '#991b1b' }
+    : hasWarning
+      ? { bg: 'rgb(254, 243, 199)', border: '#fcd34d', text: '#92400e' }
+      : { bg: 'rgb(220, 252, 231)', border: '#86efac', text: '#14532d' }
+  const FLAG_LABEL: Record<string, string> = {
+    out_of_service:    'Out of service',
+    not_authorized:    'Not authorized',
+    high_vehicle_oos:  'High vehicle OOS rate',
+    high_driver_oos:   'High driver OOS rate',
+    no_name_on_record: 'Missing legal name',
+  }
+  return (
+    <div className="rounded-lg p-3 text-xs"
+      style={{ background: tone.bg, border: `1px solid ${tone.border}`, color: tone.text }}>
+      <div className="flex items-center justify-between mb-1.5">
+        <span className="font-semibold">{snap.legal_name || snap.dba_name || 'Unnamed carrier'}</span>
+        <span className="font-mono text-[10px] opacity-80">
+          {snap.mc_number ? `MC# ${snap.mc_number}` : snap.dot_number ? `DOT# ${snap.dot_number}` : ''}
+        </span>
+      </div>
+      {snap.operating_status && <p className="mb-0.5"><span className="opacity-70">Authority:</span> {snap.operating_status}</p>}
+      {snap.entity_type && <p className="mb-0.5"><span className="opacity-70">Entity:</span> {snap.entity_type}</p>}
+      {(snap.power_units != null || snap.drivers != null) && (
+        <p className="mb-0.5">
+          <span className="opacity-70">Fleet:</span> {snap.power_units ?? '—'} units · {snap.drivers ?? '—'} drivers
+        </p>
+      )}
+      {(snap.oos_rate_vehicle != null || snap.oos_rate_driver != null) && (
+        <p className="mb-0.5">
+          <span className="opacity-70">OOS:</span>{' '}
+          {snap.oos_rate_vehicle != null ? `vehicle ${snap.oos_rate_vehicle}%` : ''}
+          {snap.oos_rate_vehicle != null && snap.oos_rate_driver != null ? ' · ' : ''}
+          {snap.oos_rate_driver != null ? `driver ${snap.oos_rate_driver}%` : ''}
+        </p>
+      )}
+      {snap.risk_flags.length > 0 && (
+        <div className="mt-1.5 flex flex-wrap gap-1">
+          {snap.risk_flags.map(f => (
+            <span key={f} className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold"
+              style={{ background: tone.text, color: tone.bg }}>
+              {FLAG_LABEL[f] ?? f}
+            </span>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
