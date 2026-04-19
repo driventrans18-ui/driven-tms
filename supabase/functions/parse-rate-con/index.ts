@@ -13,8 +13,11 @@
 //   ANTHROPIC_API_KEY  — set via `supabase secrets set ANTHROPIC_API_KEY=sk-ant-...`
 
 import Anthropic from 'https://esm.sh/@anthropic-ai/sdk@0.65.0'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0'
 
 const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY') ?? ''
+const SUPABASE_URL      = Deno.env.get('SUPABASE_URL') ?? ''
+const SERVICE_ROLE_KEY  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
 
 const MODEL = 'claude-sonnet-4-6'
 const MAX_PAGES = 10   // rate cons rarely exceed 2; cap to bound token use
@@ -143,21 +146,57 @@ Deno.serve(async (req) => {
       return json({ error: 'Claude response was not valid JSON', raw: textBlock.text })
     }
 
-    return json({
-      prefill: parsed,
-      usage: {
-        input:       response.usage.input_tokens,
-        output:      response.usage.output_tokens,
-        cache_read:  response.usage.cache_read_input_tokens ?? 0,
-        cache_write: response.usage.cache_creation_input_tokens ?? 0,
-      },
-    })
+    const usage = {
+      input:       response.usage.input_tokens,
+      output:      response.usage.output_tokens,
+      cache_read:  response.usage.cache_read_input_tokens ?? 0,
+      cache_write: response.usage.cache_creation_input_tokens ?? 0,
+    }
+
+    // Fire-and-forget usage log so the Settings card can roll up costs.
+    // A DB insert failure shouldn't fail the parse — log and move on.
+    logUsage(req, 'parse-rate-con', MODEL, usage).catch(err =>
+      console.error('claude_usage insert failed:', err)
+    )
+
+    return json({ prefill: parsed, usage })
   } catch (e) {
     console.error('parse-rate-con error:', e)
     const msg = e instanceof Error ? e.message : 'parse failed'
     return json({ error: msg })
   }
 })
+
+// Insert one row into claude_usage. Best-effort — errors logged but
+// never bubble up. Pulls the caller's user_id from the incoming JWT
+// when present so the Settings card can (later) show per-driver draw.
+async function logUsage(
+  req: Request,
+  fnName: string,
+  model: string,
+  usage: { input: number; output: number; cache_read: number; cache_write: number },
+) {
+  if (!SUPABASE_URL || !SERVICE_ROLE_KEY) return
+  const client = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
+    auth: { persistSession: false },
+  })
+  let userId: string | null = null
+  const auth = req.headers.get('authorization') || ''
+  const jwt  = auth.toLowerCase().startsWith('bearer ') ? auth.slice(7) : ''
+  if (jwt) {
+    const { data } = await client.auth.getUser(jwt)
+    userId = data?.user?.id ?? null
+  }
+  await client.from('claude_usage').insert({
+    function:           fnName,
+    model,
+    input_tokens:       usage.input,
+    output_tokens:      usage.output,
+    cache_read_tokens:  usage.cache_read,
+    cache_write_tokens: usage.cache_write,
+    user_id:            userId,
+  })
+}
 
 function json(body: unknown) {
   return new Response(JSON.stringify(body), {
