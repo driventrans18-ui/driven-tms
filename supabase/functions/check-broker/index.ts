@@ -117,8 +117,14 @@ Deno.serve(async (req) => {
     const snap = parseSnapshot(html)
     snap.mc_number  = mc || snap.mc_number
     snap.dot_number = dot || snap.dot_number
+    // Belt-and-suspenders: some TD cells have a helper link whose text
+    // survives the anchor strip in edge cases. Truncate at known
+    // boilerplate phrases so the value column stays clean.
+    if (snap.operating_status) {
+      snap.operating_status = trimBoilerplate(snap.operating_status)
+    }
     snap.risk_flags = deriveRiskFlags(snap)
-    return json({ snapshot: snap })
+    return json({ snapshot: snap, parser_version: 'v3' })
   } catch (e) {
     console.error('check-broker error:', e)
     const msg = e instanceof Error ? e.message : 'lookup failed'
@@ -208,6 +214,17 @@ function deriveRiskFlags(s: BrokerSnapshot): string[] {
   if (s.oos_rate_driver  != null && s.oos_rate_driver  >= 10) flags.push('high_driver_oos')
   if (!s.legal_name) flags.push('no_name_on_record')
   return flags
+}
+
+// Strip trailing SAFER help-link text that sometimes survives
+// anchor removal, e.g. "AUTHORIZED FOR Property For Licensing and
+// Insurance details click here." → "AUTHORIZED FOR Property".
+function trimBoilerplate(s: string): string {
+  return s
+    .replace(/\s*For Licensing and Insurance.*$/i, '')
+    .replace(/\s*click here.*$/i, '')
+    .replace(/\s*For details.*$/i, '')
+    .trim()
 }
 
 function cleanText(raw: string): string | null {
