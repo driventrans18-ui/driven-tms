@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTheme, type ThemeMode } from '../hooks/useTheme'
 import { useMapsPref, MAPS_PROVIDERS } from '../hooks/useMapsPref'
 import { supabase } from '../lib/supabase'
-import { costOf, fmtUsd, fmtTokens, type UsageRow } from '../lib/claudePricing'
+import { costOf, type UsageRow } from '../lib/claudePricing'
 
 // Settings sheet — full-screen overlay that respects safe-area insets.
 // Hosts the appearance picker and the company-info editor that feeds
