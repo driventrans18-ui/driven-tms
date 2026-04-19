@@ -334,7 +334,8 @@ function LoadFormSheet({ driverId, editing, onClose }: {
     trailer_id:  editing?.trailers?.id ?? '',
   })
   const [error, setError] = useState<string | null>(null)
-  const [quickBrokerOpen, setQuickBrokerOpen] = useState(false)
+  const [quickBrokerOpen,  setQuickBrokerOpen]  = useState(false)
+  const [brokerPickerOpen, setBrokerPickerOpen] = useState(false)
   const [estimating, setEstimating] = useState(false)
   const set = <K extends keyof typeof form>(k: K, v: typeof form[K]) =>
     setForm(f => ({ ...f, [k]: v }))
@@ -440,9 +441,9 @@ function LoadFormSheet({ driverId, editing, onClose }: {
   const { data: brokers = [] } = useQuery({
     queryKey: ['brokers-simple'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('brokers').select('id, name, mc_number').order('name')
+      const { data, error } = await supabase.from('brokers').select('id, name, mc_number, dot_number').order('name')
       if (error) throw error
-      return (data ?? []) as Array<{ id: string; name: string; mc_number: string | null }>
+      return (data ?? []) as Array<{ id: string; name: string; mc_number: string | null; dot_number: string | null }>
     },
   })
   const { data: trucks = [] } = useQuery({
@@ -620,17 +621,18 @@ function LoadFormSheet({ driverId, editing, onClose }: {
 
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Broker</label>
-              <select
-                value={form.broker_id}
-                onChange={e => {
-                  if (e.target.value === '__new') { setQuickBrokerOpen(true); return }
-                  set('broker_id', e.target.value)
-                }}
-                className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-base">
-                <option value="">— None —</option>
-                {brokers.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-                <option value="__new">+ New broker…</option>
-              </select>
+              {/* Opens a searchable sheet — native <select> doesn't scale
+                  once the book of brokers gets long. */}
+              <button
+                type="button"
+                onClick={() => setBrokerPickerOpen(true)}
+                className="w-full text-left px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-base flex items-center justify-between cursor-pointer active:bg-gray-100"
+              >
+                <span className={form.broker_id ? 'text-gray-900' : 'text-gray-500'}>
+                  {brokers.find(b => b.id === form.broker_id)?.name ?? '— None —'}
+                </span>
+                <span className="text-gray-400 text-sm ml-2">Search</span>
+              </button>
             </div>
 
             <div>
@@ -776,7 +778,122 @@ function LoadFormSheet({ driverId, editing, onClose }: {
           onCreated={id => { set('broker_id', id); setQuickBrokerOpen(false) }}
         />
       )}
+
+      {brokerPickerOpen && (
+        <BrokerPickerSheet
+          brokers={brokers}
+          selectedId={form.broker_id}
+          onClose={() => setBrokerPickerOpen(false)}
+          onPick={id => { set('broker_id', id); setBrokerPickerOpen(false) }}
+          onNew={() => { setBrokerPickerOpen(false); setQuickBrokerOpen(true) }}
+        />
+      )}
     </>
+  )
+}
+
+// ── Broker picker ────────────────────────────────────────────────────────────
+// Bottom-sheet replacement for the native <select> dropdown — with a book
+// of 50+ brokers the native wheel is unusable. Matches by name, MC#, or
+// DOT# so the driver can type whatever identifier they remember.
+
+function BrokerPickerSheet({ brokers, selectedId, onClose, onPick, onNew }: {
+  brokers: Array<{ id: string; name: string; mc_number: string | null; dot_number: string | null }>
+  selectedId: string
+  onClose: () => void
+  onPick: (id: string) => void
+  onNew: () => void
+}) {
+  const [q, setQ] = useState('')
+  const needle = q.trim().toLowerCase()
+  const digits = needle.replace(/\D/g, '')
+  const matches = needle === ''
+    ? brokers
+    : brokers.filter(b => {
+        if (b.name.toLowerCase().includes(needle)) return true
+        if (digits && b.mc_number  && b.mc_number.replace(/\D/g, '').includes(digits))  return true
+        if (digits && b.dot_number && b.dot_number.replace(/\D/g, '').includes(digits)) return true
+        return false
+      })
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-end" role="dialog" aria-modal="true">
+      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+      <div
+        className="relative bg-white w-full rounded-t-3xl p-5 max-h-[85vh] flex flex-col"
+        style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 16px) + 16px)' }}
+      >
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-lg font-bold text-gray-900">Choose broker</h2>
+          <button onClick={onClose} className="text-gray-400 text-lg cursor-pointer">✕</button>
+        </div>
+
+        <input
+          autoFocus
+          value={q}
+          onChange={e => setQ(e.target.value)}
+          placeholder="Search by name, MC#, or DOT#"
+          className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-base mb-3"
+        />
+
+        <div className="flex-1 overflow-y-auto -mx-1 px-1">
+          {selectedId && (
+            <button
+              type="button"
+              onClick={() => onPick('')}
+              className="w-full text-left px-4 py-3 rounded-xl text-base text-gray-600 active:bg-gray-50 cursor-pointer"
+            >
+              — None —
+            </button>
+          )}
+          {matches.length === 0 ? (
+            <p className="text-center text-sm text-gray-400 py-8">
+              No brokers match &ldquo;{q}&rdquo;.
+            </p>
+          ) : (
+            <ul className="divide-y divide-gray-100">
+              {matches.map(b => {
+                const on = b.id === selectedId
+                const sub = [
+                  b.mc_number  ? `MC# ${b.mc_number}`   : null,
+                  b.dot_number ? `DOT# ${b.dot_number}` : null,
+                ].filter(Boolean).join(' · ')
+                return (
+                  <li key={b.id}>
+                    <button
+                      type="button"
+                      onClick={() => onPick(b.id)}
+                      className="w-full text-left px-4 py-3 flex items-center justify-between active:bg-gray-50 cursor-pointer"
+                    >
+                      <span className="min-w-0">
+                        <span className="block text-base font-medium text-gray-900 truncate">{b.name}</span>
+                        {sub && <span className="block text-xs text-gray-500 mt-0.5 truncate">{sub}</span>}
+                      </span>
+                      {on && (
+                        <svg viewBox="0 0 24 24" width="20" height="20" fill="none"
+                          stroke="var(--color-brand-500)" strokeWidth="2.4"
+                          strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                          <path d="M5 12l5 5 9-11" />
+                        </svg>
+                      )}
+                    </button>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </div>
+
+        <button
+          type="button"
+          onClick={onNew}
+          className="mt-3 py-3 rounded-xl text-white text-base font-semibold cursor-pointer shrink-0"
+          style={{ background: 'var(--color-brand-500)' }}
+        >
+          + New broker…
+        </button>
+      </div>
+    </div>
   )
 }
 
