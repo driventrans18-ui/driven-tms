@@ -78,6 +78,30 @@ const STATUS_BADGE: Record<InvoiceStatus, string> = {
   Paid:    'bg-green-100 text-green-700',
 }
 
+const INVOICE_NUMBER_PREFIX = 'INV-'
+const INVOICE_NUMBER_START = 1001
+
+// Auto-generate the next invoice number by scanning existing rows for the
+// highest INV-<n> value and incrementing. Falls back to INV-1001 if none.
+async function nextInvoiceNumber(): Promise<string> {
+  const { data, error } = await supabase
+    .from('invoices')
+    .select('invoice_number')
+    .not('invoice_number', 'is', null)
+    .ilike('invoice_number', `${INVOICE_NUMBER_PREFIX}%`)
+  if (error) throw error
+  const rows = (data ?? []) as Array<{ invoice_number: string | null }>
+  let max = INVOICE_NUMBER_START - 1
+  for (const r of rows) {
+    const m = r.invoice_number?.match(/^INV-(\d+)$/i)
+    if (m) {
+      const n = parseInt(m[1], 10)
+      if (Number.isFinite(n) && n > max) max = n
+    }
+  }
+  return `${INVOICE_NUMBER_PREFIX}${max + 1}`
+}
+
 export function Invoices({ driver }: { driver: Driver }) {
   const qc = useQueryClient()
   const [openInvoice, setOpenInvoice] = useState<Invoice | null>(null)
@@ -119,7 +143,9 @@ export function Invoices({ driver }: { driver: Driver }) {
 
   const createInvoice = useMutation({
     mutationFn: async (load: DeliveredLoad) => {
+      const invoice_number = await nextInvoiceNumber()
       const { error } = await supabase.from('invoices').insert({
+        invoice_number,
         load_id: load.id,
         broker_id: load.brokers?.id ?? null,
         amount: load.rate,
@@ -584,6 +610,18 @@ export function InvoiceFormSheet({ driverId, editing, onClose }: {
   const [previewBusy, setPreviewBusy] = useState(false)
   const [preview, setPreview] = useState<{ url: string; fileName: string } | null>(null)
   useEffect(() => () => { if (preview) URL.revokeObjectURL(preview.url) }, [preview])
+
+  // Auto-populate the invoice number for new invoices. We only fill it when
+  // the field is still empty so we don't clobber a user-typed override.
+  useEffect(() => {
+    if (isEdit) return
+    let cancelled = false
+    nextInvoiceNumber().then(n => {
+      if (cancelled) return
+      setForm(f => f.invoice_number ? f : { ...f, invoice_number: n })
+    }).catch(() => { /* leave blank on failure — user can type one */ })
+    return () => { cancelled = true }
+  }, [isEdit])
 
   // Inline "add new" state — opened when the bill-to picker's "+ New" option
   // is chosen. Creates the broker / customer and auto-selects it.

@@ -15,8 +15,12 @@ interface Truck {
   year: number | null
 }
 
-export function Profile({ driver, email, onOpenBrokers, onOpenSettings }: {
-  driver: Driver; email: string | undefined; onOpenBrokers: () => void; onOpenSettings: () => void
+export function Profile({ driver, email, onOpenBrokers, onOpenCustomers, onOpenSettings }: {
+  driver: Driver
+  email: string | undefined
+  onOpenBrokers: () => void
+  onOpenCustomers: () => void
+  onOpenSettings: () => void
 }) {
   const qc = useQueryClient()
   const [photoUrl, setPhotoUrl] = useState<string | null>(null)
@@ -207,13 +211,22 @@ export function Profile({ driver, email, onOpenBrokers, onOpenSettings }: {
         )}
       </Section>
 
-      <button
-        onClick={onOpenBrokers}
-        className="w-full bg-white rounded-2xl px-5 py-3.5 flex items-center justify-between text-base font-semibold text-gray-900 active:bg-gray-50 cursor-pointer"
-      >
-        <span>Brokers</span>
-        <span className="text-gray-300 text-lg">›</span>
-      </button>
+      <Section title="Contacts">
+        <button
+          onClick={onOpenBrokers}
+          className="w-full px-5 py-3.5 flex items-center justify-between text-base font-medium text-gray-900 active:bg-gray-50 cursor-pointer"
+        >
+          <span>Brokers</span>
+          <span className="text-gray-300 text-lg">›</span>
+        </button>
+        <button
+          onClick={onOpenCustomers}
+          className="w-full px-5 py-3.5 flex items-center justify-between text-base font-medium text-gray-900 active:bg-gray-50 cursor-pointer"
+        >
+          <span>Customers</span>
+          <span className="text-gray-300 text-lg">›</span>
+        </button>
+      </Section>
 
       <button
         onClick={signOut}

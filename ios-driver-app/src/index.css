@@ -57,15 +57,19 @@
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --color-surface-bg:       #00171F;
-  --color-surface-card:     #0A2633;
-  --color-surface-elevated: #0F3146;
-  --color-surface-muted:    #0A2633;
-  --color-border-subtle:    #123046;
-  --color-border-strong:    #1A4461;
-  --color-text-primary:     #F1F5F9;
-  --color-text-secondary:   #B6C5D1;
-  --color-text-tertiary:    #7E8CA1;
+  /* True-black OLED palette: pure #000 background saves power on OLED
+     panels and disappears into the bezel. Cards sit on a near-black
+     elevation (#111) so they're still distinguishable without looking
+     grey next to the black. */
+  --color-surface-bg:       #000000;
+  --color-surface-card:     #111111;
+  --color-surface-elevated: #1C1C1E;
+  --color-surface-muted:    #1C1C1E;
+  --color-border-subtle:    #222222;
+  --color-border-strong:    #2C2C2E;
+  --color-text-primary:     #FFFFFF;
+  --color-text-secondary:   #B0B0B3;
+  --color-text-tertiary:    #6E6E73;
   --color-success-100: rgba(21, 128, 61, 0.20);
   --color-warning-100: rgba(180, 83, 9, 0.22);
   --color-danger-100:  rgba(185, 28, 28, 0.22);
@@ -75,15 +79,15 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
-    --color-surface-bg:       #00171F;
-    --color-surface-card:     #0A2633;
-    --color-surface-elevated: #0F3146;
-    --color-surface-muted:    #0A2633;
-    --color-border-subtle:    #123046;
-    --color-border-strong:    #1A4461;
-    --color-text-primary:     #F1F5F9;
-    --color-text-secondary:   #B6C5D1;
-    --color-text-tertiary:    #7E8CA1;
+    --color-surface-bg:       #000000;
+    --color-surface-card:     #111111;
+    --color-surface-elevated: #1C1C1E;
+    --color-surface-muted:    #1C1C1E;
+    --color-border-subtle:    #222222;
+    --color-border-strong:    #2C2C2E;
+    --color-text-primary:     #FFFFFF;
+    --color-text-secondary:   #B0B0B3;
+    --color-text-tertiary:    #6E6E73;
     --color-success-100: rgba(21, 128, 61, 0.20);
     --color-warning-100: rgba(180, 83, 9, 0.22);
     --color-danger-100:  rgba(185, 28, 28, 0.22);

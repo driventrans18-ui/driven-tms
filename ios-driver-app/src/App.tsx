@@ -5,6 +5,7 @@ import { Login } from './screens/Login'
 import { Home } from './screens/Home'
 import { Loads } from './screens/Loads'
 import { Brokers } from './screens/Brokers'
+import { Customers } from './screens/Customers'
 import { Expenses } from './screens/Expenses'
 import { Invoices } from './screens/Invoices'
 import { Profile } from './screens/Profile'
@@ -52,6 +53,7 @@ function Shell({ tab, setTab, userId, email }: {
 }) {
   const { data: driver, isLoading, error } = useDriver(userId, email)
   const [brokersOpen, setBrokersOpen] = useState(false)
+  const [customersOpen, setCustomersOpen] = useState(false)
   const [driverModeOpen, setDriverModeOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
 
@@ -90,7 +92,7 @@ function Shell({ tab, setTab, userId, email }: {
         {tab === 'loads'    && <Loads driver={driver} />}
         {tab === 'expenses' && <Expenses />}
         {tab === 'invoices' && <Invoices driver={driver} />}
-        {tab === 'profile'  && <Profile driver={driver} email={email} onOpenBrokers={() => setBrokersOpen(true)} onOpenSettings={() => setSettingsOpen(true)} />}
+        {tab === 'profile'  && <Profile driver={driver} email={email} onOpenBrokers={() => setBrokersOpen(true)} onOpenCustomers={() => setCustomersOpen(true)} onOpenSettings={() => setSettingsOpen(true)} />}
       </main>
       <TabBar active={tab} onChange={setTab} />
       {brokersOpen && (
@@ -104,6 +106,20 @@ function Shell({ tab, setTab, userId, email }: {
           </header>
           <div className="flex-1 overflow-y-auto px-4 pb-8">
             <Brokers />
+          </div>
+        </div>
+      )}
+      {customersOpen && (
+        <div className="fixed inset-0 z-50 flex flex-col" style={{ background: 'var(--color-surface-bg)' }}>
+          <header
+            className="px-4 pb-3 flex items-center justify-between shrink-0"
+            style={{ paddingTop: 'calc(env(safe-area-inset-top, 0) + 8px)' }}
+          >
+            <h1 className="text-2xl font-bold text-gray-900">Customers</h1>
+            <button onClick={() => setCustomersOpen(false)} className="text-[var(--color-brand-500)] text-base font-medium cursor-pointer">Done</button>
+          </header>
+          <div className="flex-1 overflow-y-auto px-4 pb-8">
+            <Customers />
           </div>
         </div>
       )}
