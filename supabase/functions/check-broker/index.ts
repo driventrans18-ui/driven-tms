@@ -295,6 +295,12 @@ async function searchByName(name: string, debug = false): Promise<{ candidates: 
       redirect: 'follow',
     })
     const html = await res.text()
+    // Dump ~500 chars of raw HTML around the first USDOT-param occurrence
+    // so we can see the exact anchor / link markup SAFER uses.
+    const usdotIdx = html.toLowerCase().indexOf('query_param=usdot')
+    const usdotContext = usdotIdx >= 0
+      ? html.slice(Math.max(0, usdotIdx - 200), usdotIdx + 500)
+      : null
     const attemptInfo = {
       label: a.label,
       status: res.status,
@@ -304,6 +310,7 @@ async function searchByName(name: string, debug = false): Promise<{ candidates: 
       contains_usdot_link: /query_param=USDOT/i.test(html),
       title: html.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1]?.trim() ?? null,
       preview: html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 300),
+      usdot_context_raw: usdotContext,
     }
     ;(diagnostic.attempts as unknown[]).push(attemptInfo)
     if (!res.ok) continue
