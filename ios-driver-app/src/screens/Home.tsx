@@ -164,6 +164,7 @@ export function Home({ driver, onGoToLoads, onOpenDriverMode }: {
   })
 
   const [freightPickerOpen, setFreightPickerOpen] = useState(false)
+  const [podPickerOpen, setPodPickerOpen] = useState(false)
   const [carrierLookupOpen, setCarrierLookupOpen] = useState(false)
 
   const captureFreight = useMutation({
@@ -201,6 +202,33 @@ export function Home({ driver, onGoToLoads, onOpenDriverMode }: {
     }
     setFreightPickerOpen(true)
   }
+
+  // Scan POD — always picks a load first because a POD almost never
+  // belongs to whatever load is currently "active" (POD happens at
+  // delivery, by which point the next load is often already assigned).
+  // Capture is the same stamped-photo path as Capture Freight so the
+  // timestamp stays printed on the page — useful for detention claims.
+  const scanPod = useMutation({
+    mutationFn: async (target: { id: string; loadRef: string }) => {
+      const stamped = await captureStampedPhoto()
+      if (!stamped) return
+      const bytes = Uint8Array.from(atob(stamped.base64), c => c.charCodeAt(0))
+      const blob = new Blob([bytes], { type: stamped.mimeType })
+      await uploadBol({
+        loadId:  target.id,
+        loadRef: target.loadRef,
+        blob,
+        filename: `pod-${Date.now()}.jpg`,
+        mimeType: stamped.mimeType,
+        kind: 'pod',
+      })
+    },
+    onError: (e: Error) => {
+      if (e.message.toLowerCase().includes('cancel')) return
+      alert('POD upload failed: ' + e.message)
+    },
+    onSuccess: () => alert('POD uploaded and saved to Files.'),
+  })
 
   return (
     <>
@@ -305,8 +333,28 @@ export function Home({ driver, onGoToLoads, onOpenDriverMode }: {
           </button>
           <button
             type="button"
+            onClick={() => { if (!scanPod.isPending) setPodPickerOpen(true) }}
+            disabled={scanPod.isPending}
+            className="bg-white rounded-2xl p-4 text-left active:bg-gray-50 disabled:opacity-40 cursor-pointer flex items-center gap-3"
+          >
+            <span className="w-11 h-11 flex items-center justify-center shrink-0" aria-hidden>
+              <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="text-gray-700">
+                <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+                <path d="M14 2v6h6" />
+                <path d="M9 13h6M9 17h6M9 9h2" />
+              </svg>
+            </span>
+            <span>
+              <span className="block text-sm font-semibold text-gray-900">
+                {scanPod.isPending ? 'Uploading…' : 'Scan POD'}
+              </span>
+              <span className="block text-[11px] text-gray-500">Pick a load to attach to</span>
+            </span>
+          </button>
+          <button
+            type="button"
             onClick={() => setCarrierLookupOpen(true)}
-            className="bg-white rounded-2xl p-4 text-left active:bg-gray-50 cursor-pointer flex items-center gap-3 col-span-2"
+            className="bg-white rounded-2xl p-4 text-left active:bg-gray-50 cursor-pointer flex items-center gap-3"
           >
             <span className="w-11 h-11 flex items-center justify-center shrink-0" aria-hidden>
               <img src={fmcsaIcon} alt="" className="w-full h-full object-contain" />
@@ -336,10 +384,22 @@ export function Home({ driver, onGoToLoads, onOpenDriverMode }: {
     {freightPickerOpen && (
       <FreightLoadPicker
         driverId={driver.id}
+        title="Attach freight photo to…"
         onClose={() => setFreightPickerOpen(false)}
         onPick={(id, loadRef) => {
           setFreightPickerOpen(false)
           captureFreight.mutate({ id, loadRef })
+        }}
+      />
+    )}
+    {podPickerOpen && (
+      <FreightLoadPicker
+        driverId={driver.id}
+        title="Attach POD to…"
+        onClose={() => setPodPickerOpen(false)}
+        onPick={(id, loadRef) => {
+          setPodPickerOpen(false)
+          scanPod.mutate({ id, loadRef })
         }}
       />
     )}
@@ -352,8 +412,9 @@ export function Home({ driver, onGoToLoads, onOpenDriverMode }: {
 // Shown when the driver taps Capture Freight without an active load. Lists
 // recent loads so they can attach the photo to one. Tapping a row closes the
 // sheet and triggers the camera.
-function FreightLoadPicker({ driverId, onClose, onPick }: {
+function FreightLoadPicker({ driverId, title, onClose, onPick }: {
   driverId: string
+  title: string
   onClose: () => void
   onPick: (loadId: string, loadRef: string) => void
 }) {
@@ -383,7 +444,7 @@ function FreightLoadPicker({ driverId, onClose, onPick }: {
         style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 16px) + 16px)' }}
       >
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-bold text-gray-900">Attach freight photo to…</h2>
+          <h2 className="text-lg font-bold text-gray-900">{title}</h2>
           <button onClick={onClose} aria-label="Close" className="text-gray-400 text-lg cursor-pointer">✕</button>
         </div>
         {isLoading ? (
