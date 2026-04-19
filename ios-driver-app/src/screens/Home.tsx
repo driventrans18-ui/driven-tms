@@ -12,6 +12,7 @@ import type { Driver } from '../hooks/useDriver'
 import dieselIcon       from '../assets/quick-actions/diesel.png'
 import cameraFreightIcon from '../assets/quick-actions/camerafreight.png'
 import fmcsaIcon         from '../assets/quick-actions/fmcsa.png'
+import podScanIcon       from '../assets/quick-actions/podscan.png'
 
 const ACTIVE_STATUSES = ['Assigned', 'In Transit']
 
@@ -338,11 +339,7 @@ export function Home({ driver, onGoToLoads, onOpenDriverMode }: {
             className="bg-white rounded-2xl p-4 text-left active:bg-gray-50 disabled:opacity-40 cursor-pointer flex items-center gap-3"
           >
             <span className="w-11 h-11 flex items-center justify-center shrink-0" aria-hidden>
-              <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="text-gray-700">
-                <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
-                <path d="M14 2v6h6" />
-                <path d="M9 13h6M9 17h6M9 9h2" />
-              </svg>
+              <img src={podScanIcon} alt="" className="w-full h-full object-contain" />
             </span>
             <span>
               <span className="block text-sm font-semibold text-gray-900">
