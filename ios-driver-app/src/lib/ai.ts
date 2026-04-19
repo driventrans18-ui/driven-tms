@@ -62,6 +62,36 @@ export async function parseRateCon(
   return { prefill: res.prefill, usage: res.usage ?? { input: 0, output: 0, cache_read: 0, cache_write: 0 } }
 }
 
+// ── Receipt (expense) parser ────────────────────────────────────────────────
+
+export interface ReceiptPrefill {
+  vendor:        string | null
+  amount:        number | null
+  date:          string | null   // YYYY-MM-DD
+  category:      string | null   // one of ExpenseSheet's CATEGORIES
+  notes:         string | null
+  gallons:       number | null   // fuel only
+  price_per_gal: number | null   // fuel only
+  odometer:      number | null   // fuel only
+}
+
+// Send a receipt photo to Claude Haiku Vision and get back a typed prefill.
+// Any field Claude can't extract with confidence comes back null.
+export async function parseReceipt(
+  image: string,
+  mimeType = 'image/jpeg',
+): Promise<{ prefill: ReceiptPrefill; usage: RateConUsage }> {
+  if (!image) throw new Error('Image required')
+  const { data, error } = await supabase.functions.invoke('parse-receipt', {
+    body: { image, mime_type: mimeType },
+  })
+  if (error) throw new Error(error.message)
+  const res = data as { prefill?: ReceiptPrefill; usage?: RateConUsage; error?: string }
+  if (res?.error) throw new Error(res.error)
+  if (!res?.prefill) throw new Error('parse-receipt returned no prefill')
+  return { prefill: res.prefill, usage: res.usage ?? { input: 0, output: 0, cache_read: 0, cache_write: 0 } }
+}
+
 // ── Broker FMCSA lookup ─────────────────────────────────────────────────────
 
 export interface BrokerSnapshot {
