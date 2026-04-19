@@ -70,19 +70,22 @@ function Shell({ tab, setTab, userId, email }: {
   }
 
   return (
-    // Fixed flex column owns the full viewport. The TabBar is a normal flex
-    // child at the bottom rather than position:fixed — that prevents iOS
-    // WKWebView from rubber-banding the tab bar along with the page on
-    // overscroll. Only the <main> region scrolls internally. Each screen now
-    // renders its own title + optional "+" action in its header row.
+    // Fixed flex column owns the full viewport. Content extends to the
+    // absolute top/bottom edges — the status-bar and home-indicator areas
+    // get the app background underneath, not a solid colour strip. The
+    // inner scroll region pushes its own padding equal to the safe-area
+    // insets so the first/last row clear the dynamic island and home bar.
     <div
       className="fixed inset-0 flex flex-col"
-      style={{ paddingTop: 'env(safe-area-inset-top, 0)', background: 'var(--color-surface-bg)' }}
+      style={{ background: 'var(--color-surface-bg)' }}
     >
-      {/* Breathing room: pt-2 under the safe-area-inset-top gives the large
-          title some air; pb-8 keeps the last section clear of the tab bar
-          even when the inner screen's own pb isn't enough. */}
-      <main className="flex-1 overflow-y-auto px-4 pt-2 pb-8">
+      <main
+        className="flex-1 overflow-y-auto px-4"
+        style={{
+          paddingTop: 'calc(env(safe-area-inset-top, 0) + 8px)',
+          paddingBottom: '32px',
+        }}
+      >
         {tab === 'home'     && <Home driver={driver} onGoToLoads={() => setTab('loads')} onOpenDriverMode={() => setDriverModeOpen(true)} />}
         {tab === 'loads'    && <Loads driver={driver} />}
         {tab === 'expenses' && <Expenses />}
@@ -91,12 +94,15 @@ function Shell({ tab, setTab, userId, email }: {
       </main>
       <TabBar active={tab} onChange={setTab} />
       {brokersOpen && (
-        <div className="fixed inset-0 z-50 flex flex-col" style={{ paddingTop: 'env(safe-area-inset-top, 0)', background: 'var(--color-surface-bg)' }}>
-          <header className="px-4 pt-4 pb-3 flex items-center justify-between shrink-0">
+        <div className="fixed inset-0 z-50 flex flex-col" style={{ background: 'var(--color-surface-bg)' }}>
+          <header
+            className="px-4 pb-3 flex items-center justify-between shrink-0"
+            style={{ paddingTop: 'calc(env(safe-area-inset-top, 0) + 8px)' }}
+          >
             <h1 className="text-2xl font-bold text-gray-900">Brokers</h1>
             <button onClick={() => setBrokersOpen(false)} className="text-[var(--color-brand-500)] text-base font-medium cursor-pointer">Done</button>
           </header>
-          <div className="flex-1 overflow-y-auto px-4 pb-6">
+          <div className="flex-1 overflow-y-auto px-4 pb-8">
             <Brokers />
           </div>
         </div>
