@@ -278,7 +278,7 @@ function Row({ k, v, valueColor, chevron }: {
   return (
     <div className="flex items-center justify-between px-5 py-3.5 gap-3">
       <span className="text-sm text-gray-500 shrink-0">{k}</span>
-      <span className="text-base font-medium text-right truncate" style={{ color: valueColor ?? '#111827' }}>
+      <span className="text-base font-medium text-right truncate" style={{ color: valueColor ?? 'var(--color-text-primary)' }}>
         {v}
       </span>
       {chevron && <span className="text-gray-300 text-lg shrink-0">›</span>}

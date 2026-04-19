@@ -202,14 +202,14 @@ export function Invoices({ driver }: { driver: Driver }) {
             return (
               <button key={k} onClick={() => setTab(k)}
                 className="py-2 rounded-lg text-sm font-semibold cursor-pointer transition-colors"
-                style={on ? { background: 'white', color: '#111827' } : { color: '#6b7280' }}>
+                style={on ? { background: 'var(--color-surface-elevated)', color: 'var(--color-text-primary)' } : { color: '#6b7280' }}>
                 {k === 'outstanding' ? 'Outstanding' : 'Paid'}
               </button>
             )
           })}
         </div>
         <div className="grid grid-cols-2 mt-3 px-2">
-          <p className="text-xl font-bold text-center" style={{ color: tab === 'outstanding' ? '#111827' : '#9ca3af' }}>
+          <p className="text-xl font-bold text-center" style={{ color: tab === 'outstanding' ? 'var(--color-text-primary)' : '#9ca3af' }}>
             {fmtMoney(totals.outstanding)}
           </p>
           <p className="text-xl font-bold text-center" style={{ color: tab === 'paid' ? '#15803d' : '#9ca3af' }}>
