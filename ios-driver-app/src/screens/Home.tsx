@@ -176,7 +176,7 @@ export function Home({ driver, onGoToLoads, onOpenDriverMode }: {
 
   return (
     <>
-    <div className="space-y-5 pb-6">
+    <div className="space-y-5 pb-10">
       <ScreenHeader title="Home" />
 
       <Summary driverId={driver.id} />
@@ -546,16 +546,19 @@ function AddFuelSheet({ loadId, onClose }: { loadId: string | null; onClose: () 
 // ── Carrier / broker FMCSA lookup sheet ──────────────────────────────────────
 
 function CarrierLookupSheet({ onClose }: { onClose: () => void }) {
+  const qc = useQueryClient()
   const [query, setQuery] = useState('')
   const [mode, setMode] = useState<'mc' | 'dot'>('mc')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [snap, setSnap] = useState<import('../lib/ai').BrokerSnapshot | null>(null)
+  const [saving, setSaving] = useState<'broker' | 'customer' | null>(null)
+  const [savedAs, setSavedAs] = useState<'broker' | 'customer' | null>(null)
 
   async function runLookup() {
     const digits = query.replace(/\D/g, '')
     if (!digits) { setError('Enter an MC# or DOT#'); return }
-    setBusy(true); setError(null); setSnap(null)
+    setBusy(true); setError(null); setSnap(null); setSavedAs(null)
     try {
       const { checkBroker } = await import('../lib/ai')
       const s = await checkBroker(mode === 'mc' ? { mc: digits } : { dot: digits })
@@ -564,6 +567,40 @@ function CarrierLookupSheet({ onClose }: { onClose: () => void }) {
       setError((e as Error).message)
     } finally {
       setBusy(false)
+    }
+  }
+
+  // Persist the looked-up carrier as a broker or customer record. We pull
+  // the obvious fields straight from the FMCSA snapshot; the user can
+  // always edit later in the Brokers/Customers screen on the web.
+  async function save(kind: 'broker' | 'customer') {
+    if (!snap) return
+    setSaving(kind); setError(null)
+    try {
+      const name = snap.legal_name || snap.dba_name || 'Unnamed carrier'
+      if (kind === 'broker') {
+        const { error } = await supabase.from('brokers').insert({
+          name,
+          phone: snap.phone || null,
+          mc_number: snap.mc_number || null,
+        })
+        if (error) throw error
+        qc.invalidateQueries({ queryKey: ['brokers-simple'] })
+        qc.invalidateQueries({ queryKey: ['brokers-driver'] })
+      } else {
+        const { error } = await supabase.from('customers').insert({
+          name,
+          phone: snap.phone || null,
+          address: snap.physical_address || null,
+        })
+        if (error) throw error
+        qc.invalidateQueries({ queryKey: ['customers-simple'] })
+      }
+      setSavedAs(kind)
+    } catch (e) {
+      setError(`Save failed: ${(e as Error).message}`)
+    } finally {
+      setSaving(null)
     }
   }
 
@@ -610,7 +647,36 @@ function CarrierLookupSheet({ onClose }: { onClose: () => void }) {
 
         {error && <p className="mt-3 text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
 
-        {snap && <div className="mt-4"><CarrierLookupCard snap={snap} /></div>}
+        {snap && (
+          <div className="mt-4 space-y-3">
+            <CarrierLookupCard snap={snap} />
+
+            {savedAs ? (
+              <p className="text-center text-sm text-green-700 bg-green-50 rounded-lg px-3 py-2">
+                Saved as {savedAs}. You'll see it in the {savedAs === 'broker' ? 'Broker' : 'Customer'} picker next time.
+              </p>
+            ) : (
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => save('broker')}
+                  disabled={saving !== null}
+                  className="py-3 rounded-xl text-white text-base font-semibold disabled:opacity-60 cursor-pointer"
+                  style={{ background: 'var(--color-brand-500)' }}
+                >
+                  {saving === 'broker' ? 'Saving…' : 'Save as broker'}
+                </button>
+                <button
+                  onClick={() => save('customer')}
+                  disabled={saving !== null}
+                  className="py-3 rounded-xl text-base font-semibold border disabled:opacity-60 cursor-pointer bg-white"
+                  style={{ borderColor: 'var(--color-brand-500)', color: 'var(--color-brand-500)' }}
+                >
+                  {saving === 'customer' ? 'Saving…' : 'Save as customer'}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   )

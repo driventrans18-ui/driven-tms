@@ -15,7 +15,7 @@ export function TabBar({ active, onChange }: { active: TabKey; onChange: (k: Tab
     // Rendered as a flex child of the viewport-fixed shell in App.tsx so iOS
     // WKWebView overscroll can't rubber-band the bar off-screen.
     <nav
-      className="shrink-0 bg-white/90 backdrop-blur border-t border-gray-200"
+      className="shrink-0 bg-white/95 backdrop-blur border-t border-gray-200"
       style={{ paddingBottom: 'env(safe-area-inset-bottom, 0)' }}
     >
       <ul className="grid grid-cols-5">
@@ -25,11 +25,11 @@ export function TabBar({ active, onChange }: { active: TabKey; onChange: (k: Tab
             <li key={t.key}>
               <button
                 onClick={() => onChange(t.key)}
-                className="w-full flex flex-col items-center justify-center py-2 gap-1 cursor-pointer"
+                className="w-full flex flex-col items-center justify-center pt-2 pb-1.5 gap-0.5 cursor-pointer active:opacity-80"
                 style={{ color: on ? 'var(--color-brand-500)' : '#8e8e93' }}
               >
-                <span className="w-6 h-6 flex items-center justify-center">{t.icon}</span>
-                <span className="text-[11px] font-medium">{t.label}</span>
+                <span className="w-7 h-7 flex items-center justify-center">{t.icon}</span>
+                <span className="text-[10px] font-medium tracking-tight">{t.label}</span>
               </button>
             </li>
           )
