@@ -204,13 +204,27 @@ function parseSnapshot(html: string): BrokerSnapshot {
 
   // SAFER lists for-hire authority on the line "MC/MX/FF Number(s):". The
   // value cell can hold one or more identifiers, e.g. "MC-123456 MX-987".
-  // Strip the "MC-" prefix so we store just the digits, matching how the
-  // rest of the app types mc_number.
+  // The TH/TD pair is wrapped in nested <FONT>/<A> tags that vary across
+  // carriers, so try findValue() first and fall back to a raw HTML scan
+  // for any "MC-NNNN" or "MC NNNN" sequence — restricted to a window
+  // around the label so we don't pick up MC numbers from elsewhere on
+  // the page.
+  let mcDigits: string | null = null
   const mcRaw = findValue('MC/MX/FF Number(s)') ?? findValue('MC/MX/FF Number')
-  const mcMatch = mcRaw?.match(/MC[-\s]?(\d+)/i)
+  const mcMatchPrimary = mcRaw?.match(/MC[-\s]?(\d+)/i)
+  if (mcMatchPrimary) {
+    mcDigits = mcMatchPrimary[1]
+  } else {
+    const labelIdx = html.search(/MC\/MX\/FF\s*Number/i)
+    if (labelIdx !== -1) {
+      const window = html.slice(labelIdx, labelIdx + 600)
+      const m = window.match(/MC[-\s]?(\d{3,8})\b/i)
+      if (m) mcDigits = m[1]
+    }
+  }
 
   return {
-    mc_number:        mcMatch ? mcMatch[1] : null,
+    mc_number:        mcDigits,
     dot_number:       headerDot ?? findValue('USDOT Number'),
     legal_name:       headerName ?? findValue('Legal Name'),
     dba_name:         findValue('DBA Name'),
