@@ -83,15 +83,26 @@ Deno.serve(async (req) => {
     }
     const html = await res.text()
 
-    // Debug mode — returns an 8k slice of the raw HTML so we can see
-    // exactly what SAFER sent and fix the parser. Call with
-    // { "mc_number": "...", "debug": true } from the Test panel.
+    // Debug mode — returns a chunk of HTML around each key label so we
+    // can see the actual markup surrounding the values we want to
+    // extract. Call with { "mc_number": "...", "debug": true }.
     if (debug) {
+      const around = (label: string, before = 100, after = 400): string | null => {
+        const idx = html.toLowerCase().indexOf(label.toLowerCase())
+        if (idx === -1) return null
+        return html.slice(Math.max(0, idx - before), idx + after)
+      }
       return json({
         html_length: html.length,
-        contains_legal_name_label: /Legal Name/i.test(html),
-        contains_record_not_found: /Record Not Found/i.test(html),
-        html_preview: html.slice(0, 8000),
+        around_legal_name:      around('Legal Name'),
+        around_dba_name:        around('DBA Name'),
+        around_physical_addr:   around('Physical Address'),
+        around_phone:           around('Phone'),
+        around_operating_status: around('Operating Status'),
+        around_entity_type:     around('Entity Type'),
+        around_power_units:     around('Power Units'),
+        around_drivers:         around('Drivers'),
+        around_out_of_service:  around('Out of Service'),
       })
     }
 
