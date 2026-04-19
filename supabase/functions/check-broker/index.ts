@@ -137,37 +137,65 @@ function json(body: unknown, status = 200) {
   })
 }
 
-// Parse the SAFER carrier-snapshot HTML. Each field sits in a <TD> labeled
-// by the preceding <TH>; the tolerant regex handles whitespace and the
-// nbsp-heavy formatting SAFER emits.
+// Parse the SAFER carrier-snapshot HTML. SAFER's markup is inconsistent
+// — sometimes <TH>Label:</TH><TD>value</TD>, sometimes with nested <FONT>
+// tags, and the company name sits bare inside a <B> tag above the table.
+// This parser uses indexOf-based lookup (find the label text, then the
+// NEXT <TD>…</TD>) rather than strict adjacency regex, which tolerates
+// all of SAFER's quirks.
 function parseSnapshot(html: string): BrokerSnapshot {
-  const get = (label: string): string | null => {
-    const re = new RegExp(
-      `<TH[^>]*>\\s*${escapeRegex(label)}\\s*:?\\s*</TH>\\s*<TD[^>]*>([\\s\\S]*?)</TD>`,
-      'i',
-    )
-    const m = html.match(re)
+  const findValue = (label: string): string | null => {
+    // Find the label inside a tag closing. ">Legal Name:" appears right
+    // before the TH closes on the snapshot page. Searching just for the
+    // text "Legal Name" matches the form's option list too.
+    const needle = new RegExp(`>\\s*${escapeRegex(label)}\\s*:?\\s*<`, 'i')
+    const m = needle.exec(html)
     if (!m) return null
-    return cleanText(m[1])
+    const after = m.index + m[0].length
+    // Find the next <TD ...>…</TD> after the label.
+    const tdOpen = html.indexOf('<TD', after)
+    if (tdOpen === -1) return null
+    const tdContentStart = html.indexOf('>', tdOpen) + 1
+    const tdClose = html.indexOf('</TD>', tdContentStart)
+    if (tdClose === -1) return null
+    return cleanText(html.slice(tdContentStart, tdClose))
   }
 
-  const powerUnitsRaw = get('Power Units')
-  const driversRaw    = get('Drivers')
-  const vehOOSRaw     = html.match(/Vehicle\s*[\s\S]*?(\d{1,3}(?:\.\d+)?)\s*%/i)?.[1]
-  const drvOOSRaw     = html.match(/Driver\s*[\s\S]*?(\d{1,3}(?:\.\d+)?)\s*%/i)?.[1]
+  // Company name lives in a bare <B>…</B> in the snapshot header above
+  // the data table. Pattern: <B>NAME</B><br>…USDOT Number:
+  const headerName = html.match(/<B>([A-Z][^<]{2,})<\/B>\s*<br>\s*USDOT Number:/i)?.[1]
+  const headerDot  = html.match(/USDOT Number:\s*(\d+)/i)?.[1]
+
+  // OOS rates live in a Safety table. Cells look like:
+  // <TH scope="row">Vehicle</TH><TD>N/A</TD><TD>18.5%</TD>
+  // We want the "%" column. Safer approach: find "Vehicle" or "Driver"
+  // label, then search forward for the first "N.N%" within ~400 chars.
+  const nearbyPercent = (label: string): number | null => {
+    const labelRe = new RegExp(`>\\s*${escapeRegex(label)}\\s*<`, 'gi')
+    let match: RegExpExecArray | null
+    while ((match = labelRe.exec(html)) !== null) {
+      const window = html.slice(match.index, match.index + 600)
+      const pct = window.match(/>\s*(\d{1,3}(?:\.\d+)?)\s*%/)
+      if (pct) return parseFloat(pct[1])
+    }
+    return null
+  }
+
+  const powerUnitsRaw = findValue('Power Units')
+  const driversRaw    = findValue('Drivers')
 
   return {
     mc_number:        null,
-    dot_number:       get('USDOT Number'),
-    legal_name:       get('Legal Name'),
-    dba_name:         get('DBA Name'),
-    physical_address: get('Physical Address'),
-    phone:            get('Phone'),
-    entity_type:      get('Entity Type'),
-    operating_status: get('Operating Status'),
-    mcs150_date:      get('MCS-150 Form Date'),
-    oos_rate_vehicle: vehOOSRaw ? parseFloat(vehOOSRaw) : null,
-    oos_rate_driver:  drvOOSRaw ? parseFloat(drvOOSRaw) : null,
+    dot_number:       headerDot ?? findValue('USDOT Number'),
+    legal_name:       headerName ?? findValue('Legal Name'),
+    dba_name:         findValue('DBA Name'),
+    physical_address: findValue('Physical Address'),
+    phone:            findValue('Phone'),
+    entity_type:      findValue('Entity Type'),
+    operating_status: findValue('Operating Status') ?? findValue('Operating Authority Status'),
+    mcs150_date:      findValue('MCS-150 Form Date'),
+    oos_rate_vehicle: nearbyPercent('Vehicle'),
+    oos_rate_driver:  nearbyPercent('Driver'),
     power_units:      powerUnitsRaw ? parseInt(powerUnitsRaw.replace(/\D/g, ''), 10) || null : null,
     drivers:          driversRaw    ? parseInt(driversRaw.replace(/\D/g, ''),    10) || null : null,
     risk_flags:       [],
