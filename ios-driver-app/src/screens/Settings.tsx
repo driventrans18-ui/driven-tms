@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTheme, type ThemeMode } from '../hooks/useTheme'
 import { useMapsPref, MAPS_PROVIDERS } from '../hooks/useMapsPref'
 import { supabase } from '../lib/supabase'
+import { costOf, fmtUsd, fmtTokens, type UsageRow } from '../lib/claudePricing'
 
 // Settings sheet — full-screen overlay that respects safe-area insets.
 // Hosts the appearance picker and the company-info editor that feeds
@@ -63,6 +64,8 @@ export function Settings({ onClose }: { onClose: () => void }) {
         style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0) + 40px)' }}
       >
         <CompanyInfoSection />
+
+        <ClaudeUsageSection />
 
         <section>
           <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide px-1 mb-2">Maps App</h2>
@@ -265,6 +268,117 @@ function CompanyInfoSection() {
           {save.isPending ? 'Saving…' : savedAt ? 'Saved ✓ — Save again' : 'Save changes'}
         </button>
       </div>
+    </section>
+  )
+}
+
+// Monthly Claude API spend. Pulls every row from the current month and
+// computes cost client-side using the price table in lib/claudePricing
+// so a rate change ships as a code update. The progress bar is scaled
+// to a soft "budget" — a visual anchor, not a hard cap. Edit the
+// MONTHLY_BUDGET_USD constant if you want a different ceiling.
+
+const MONTHLY_BUDGET_USD = 25
+
+const FUNCTION_LABELS: Record<string, string> = {
+  'parse-rate-con': 'Rate con scans',
+  'parse-receipt':  'Receipt scans',
+}
+
+function ClaudeUsageSection() {
+  // Pull rows from the start of the current month. Client-side because
+  // SUM() in PostgREST needs an RPC and a filtered select is fast enough
+  // for the volume we expect (< 1000 rows/month in the bad case).
+  const since = useMemo(() => {
+    const d = new Date()
+    d.setDate(1); d.setHours(0, 0, 0, 0)
+    return d.toISOString()
+  }, [])
+
+  const { data: rows = [], isLoading } = useQuery({
+    queryKey: ['claude-usage', since],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('claude_usage')
+        .select('function, model, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens')
+        .gte('created_at', since)
+      if (error) throw error
+      return (data ?? []) as UsageRow[]
+    },
+  })
+
+  const summary = useMemo(() => {
+    let totalCost = 0
+    let totalTokens = 0
+    const byFn: Record<string, { calls: number; cost: number; tokens: number }> = {}
+    for (const r of rows) {
+      const c = costOf(r)
+      const t = r.input_tokens + r.output_tokens + r.cache_read_tokens + r.cache_write_tokens
+      totalCost   += c
+      totalTokens += t
+      const bucket = byFn[r.function] ??= { calls: 0, cost: 0, tokens: 0 }
+      bucket.calls  += 1
+      bucket.cost   += c
+      bucket.tokens += t
+    }
+    return { totalCost, totalTokens, byFn }
+  }, [rows])
+
+  const pct = Math.min(100, (summary.totalCost / MONTHLY_BUDGET_USD) * 100)
+  const monthLabel = new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+
+  return (
+    <section>
+      <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide px-1 mb-2">Claude API usage</h2>
+      <div className="bg-white rounded-2xl p-5 space-y-3">
+        <div className="flex items-baseline justify-between">
+          <span className="text-sm text-gray-500">{monthLabel}</span>
+          <span className="text-xs text-gray-400">
+            of {fmtUsd(MONTHLY_BUDGET_USD)} budget
+          </span>
+        </div>
+
+        <div className="flex items-baseline justify-between">
+          <span className="text-2xl font-bold text-gray-900">
+            {isLoading ? '—' : fmtUsd(summary.totalCost)}
+          </span>
+          <span className="text-xs text-gray-500">
+            {isLoading ? '' : `${fmtTokens(summary.totalTokens)} tokens · ${rows.length} call${rows.length === 1 ? '' : 's'}`}
+          </span>
+        </div>
+
+        <div className="h-2 w-full rounded-full bg-gray-100 overflow-hidden">
+          <div
+            className="h-full rounded-full transition-[width] duration-500"
+            style={{
+              width: `${pct}%`,
+              background: pct >= 90 ? '#ef4444' : pct >= 70 ? '#f59e0b' : 'var(--color-brand-500)',
+            }}
+          />
+        </div>
+
+        {Object.keys(summary.byFn).length > 0 && (
+          <ul className="pt-2 space-y-1.5 text-xs">
+            {Object.entries(summary.byFn)
+              .sort((a, b) => b[1].cost - a[1].cost)
+              .map(([fn, v]) => (
+                <li key={fn} className="flex items-center justify-between">
+                  <span className="text-gray-600">
+                    {FUNCTION_LABELS[fn] ?? fn}
+                    <span className="text-gray-400"> · {v.calls}</span>
+                  </span>
+                  <span className="font-medium text-gray-900">{fmtUsd(v.cost)}</span>
+                </li>
+              ))}
+          </ul>
+        )}
+
+        {!isLoading && rows.length === 0 && (
+          <p className="text-xs text-gray-400">No Claude calls this month yet.</p>
+        )}
+      </div>
+      <p className="text-xs text-gray-500 px-1 mt-2">
+        Counts every rate-con scan + receipt scan processed by Claude. Costs are calculated from Anthropic's published per-token rates.
+      </p>
     </section>
   )
 }
