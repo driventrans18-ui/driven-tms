@@ -17,9 +17,12 @@ export function Settings({ onClose }: { onClose: () => void }) {
   return (
     <div
       className="fixed inset-0 z-50 flex flex-col"
-      style={{ paddingTop: 'env(safe-area-inset-top, 0)', background: 'var(--color-surface-bg)' }}
+      style={{ background: 'var(--color-surface-bg)' }}
     >
-      <header className="px-4 pt-4 pb-3 flex items-center justify-between shrink-0">
+      <header
+        className="px-4 pb-3 flex items-center justify-between shrink-0"
+        style={{ paddingTop: 'calc(env(safe-area-inset-top, 0) + 8px)' }}
+      >
         <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
         <button
           onClick={onClose}
@@ -30,7 +33,10 @@ export function Settings({ onClose }: { onClose: () => void }) {
         </button>
       </header>
 
-      <main className="flex-1 overflow-y-auto px-4 pb-10 space-y-5">
+      <main
+        className="flex-1 overflow-y-auto px-4 space-y-5"
+        style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0) + 40px)' }}
+      >
         <section>
           <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide px-1 mb-2">Appearance</h2>
           <div className="bg-white rounded-2xl divide-y divide-gray-100">
