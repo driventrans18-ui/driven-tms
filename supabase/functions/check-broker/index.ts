@@ -117,8 +117,14 @@ Deno.serve(async (req) => {
     const snap = parseSnapshot(html)
     snap.mc_number  = mc || snap.mc_number
     snap.dot_number = dot || snap.dot_number
+    // Belt-and-suspenders: some TD cells have a helper link whose text
+    // survives the anchor strip in edge cases. Truncate at known
+    // boilerplate phrases so the value column stays clean.
+    if (snap.operating_status) {
+      snap.operating_status = trimBoilerplate(snap.operating_status)
+    }
     snap.risk_flags = deriveRiskFlags(snap)
-    return json({ snapshot: snap })
+    return json({ snapshot: snap, parser_version: 'v3' })
   } catch (e) {
     console.error('check-broker error:', e)
     const msg = e instanceof Error ? e.message : 'lookup failed'
@@ -144,21 +150,18 @@ function json(body: unknown, status = 200) {
 // NEXT <TD>…</TD>) rather than strict adjacency regex, which tolerates
 // all of SAFER's quirks.
 function parseSnapshot(html: string): BrokerSnapshot {
+  // SAFER wraps every label in an anchor: <TH><A ...>Label:</A></TH>
+  // so the match has to tolerate that. No tolerant fallback — if we
+  // can't find the labeled TH/TD pair the field genuinely isn't on the
+  // page (intrastate carriers have fewer rows than brokers/for-hire),
+  // and a looser match false-positives onto neighbouring cells.
   const findValue = (label: string): string | null => {
-    // Find the label inside a tag closing. ">Legal Name:" appears right
-    // before the TH closes on the snapshot page. Searching just for the
-    // text "Legal Name" matches the form's option list too.
-    const needle = new RegExp(`>\\s*${escapeRegex(label)}\\s*:?\\s*<`, 'i')
-    const m = needle.exec(html)
-    if (!m) return null
-    const after = m.index + m[0].length
-    // Find the next <TD ...>…</TD> after the label.
-    const tdOpen = html.indexOf('<TD', after)
-    if (tdOpen === -1) return null
-    const tdContentStart = html.indexOf('>', tdOpen) + 1
-    const tdClose = html.indexOf('</TD>', tdContentStart)
-    if (tdClose === -1) return null
-    return cleanText(html.slice(tdContentStart, tdClose))
+    const re = new RegExp(
+      `<TH[^>]*>\\s*(?:<A[^>]*>)?\\s*${escapeRegex(label)}\\s*:?\\s*(?:</A>)?\\s*</TH>\\s*<TD[^>]*>([\\s\\S]*?)</TD>`,
+      'i',
+    )
+    const m = re.exec(html)
+    return m ? cleanText(m[1]) : null
   }
 
   // Company name lives in a bare <B>…</B> in the snapshot header above
@@ -166,12 +169,13 @@ function parseSnapshot(html: string): BrokerSnapshot {
   const headerName = html.match(/<B>([A-Z][^<]{2,})<\/B>\s*<br>\s*USDOT Number:/i)?.[1]
   const headerDot  = html.match(/USDOT Number:\s*(\d+)/i)?.[1]
 
-  // OOS rates live in a Safety table. Cells look like:
-  // <TH scope="row">Vehicle</TH><TD>N/A</TD><TD>18.5%</TD>
-  // We want the "%" column. Safer approach: find "Vehicle" or "Driver"
-  // label, then search forward for the first "N.N%" within ~400 chars.
+  // OOS rates live in a Safety table. Row labels look like
+  // <TH scope="row">Vehicle</TH> or <TH ...>Vehicle </TH> (with a trailing
+  // space) or <TH ...>Vehicle Inspections</TH> depending on the carrier.
+  // Look for the label at a word boundary inside a TH, then search
+  // forward for the first "N.N%" within ~600 chars.
   const nearbyPercent = (label: string): number | null => {
-    const labelRe = new RegExp(`>\\s*${escapeRegex(label)}\\s*<`, 'gi')
+    const labelRe = new RegExp(`<TH[^>]*>\\s*${escapeRegex(label)}\\b[^<]*</TH>`, 'gi')
     let match: RegExpExecArray | null
     while ((match = labelRe.exec(html)) !== null) {
       const window = html.slice(match.index, match.index + 600)
@@ -212,9 +216,24 @@ function deriveRiskFlags(s: BrokerSnapshot): string[] {
   return flags
 }
 
+// Strip trailing SAFER help-link text that sometimes survives
+// anchor removal, e.g. "AUTHORIZED FOR Property For Licensing and
+// Insurance details click here." → "AUTHORIZED FOR Property".
+function trimBoilerplate(s: string): string {
+  return s
+    .replace(/\s*For Licensing and Insurance.*$/i, '')
+    .replace(/\s*click here.*$/i, '')
+    .replace(/\s*For details.*$/i, '')
+    .trim()
+}
+
 function cleanText(raw: string): string | null {
   const stripped = raw
-    .replace(/<[^>]+>/g, ' ')    // strip inner tags
+    // Drop entire <A>…</A> blocks first — some SAFER TD cells append a
+    // "click here for details" link to the real value, and we don't
+    // want that helper text bleeding into the output.
+    .replace(/<A\b[^>]*>[\s\S]*?<\/A>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
     .replace(/&nbsp;/gi, ' ')
     .replace(/&amp;/gi, '&')
     .replace(/\s+/g, ' ')
