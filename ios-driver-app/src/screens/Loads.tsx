@@ -789,6 +789,28 @@ function QuickBrokerSheet({ onClose, onCreated }: { onClose: () => void; onCreat
   const [mc, setMc] = useState('')
   const [error, setError] = useState<string | null>(null)
 
+  // FMCSA verify: type the MC, tap Verify, pre-fill name/phone + show
+  // authority status / OOS rates inline so the user knows what they're
+  // about to save.
+  const [fmcsaBusy, setFmcsaBusy] = useState(false)
+  const [fmcsaSnap, setFmcsaSnap] = useState<import('../lib/ai').BrokerSnapshot | null>(null)
+  async function verifyBroker() {
+    const mcDigits = mc.replace(/\D/g, '')
+    if (!mcDigits) { setError('Enter an MC# first'); return }
+    setFmcsaBusy(true); setError(null); setFmcsaSnap(null)
+    try {
+      const { checkBroker } = await import('../lib/ai')
+      const snap = await checkBroker({ mc: mcDigits })
+      setFmcsaSnap(snap)
+      if (!name.trim()) setName(snap.legal_name ?? snap.dba_name ?? '')
+      if (!phone.trim()) setPhone(snap.phone ?? '')
+    } catch (e) {
+      setError(`FMCSA lookup failed: ${(e as Error).message}`)
+    } finally {
+      setFmcsaBusy(false)
+    }
+  }
+
   const save = useMutation({
     mutationFn: async () => {
       const { data, error } = await supabase.from('brokers').insert({
@@ -830,10 +852,18 @@ function QuickBrokerSheet({ onClose, onCreated }: { onClose: () => void; onCreat
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">MC #</label>
-              <input value={mc} onChange={e => setMc(e.target.value)} placeholder="MC-123456"
-                className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-base" />
+              <div className="flex gap-2">
+                <input value={mc} onChange={e => setMc(e.target.value)} placeholder="MC-123456"
+                  className="flex-1 px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-base" />
+                <button type="button" onClick={verifyBroker} disabled={fmcsaBusy || !mc.trim()}
+                  className="px-3 py-3 rounded-xl text-sm font-semibold border disabled:opacity-50 cursor-pointer"
+                  style={{ borderColor: 'var(--color-brand-500)', color: 'var(--color-brand-500)' }}>
+                  {fmcsaBusy ? '…' : 'Verify'}
+                </button>
+              </div>
             </div>
           </div>
+          {fmcsaSnap && <div className="mt-3"><BrokerSnapshotCardInline snap={fmcsaSnap} /></div>}
         </div>
         {error && <p className="mt-3 text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
         <button
@@ -1141,6 +1171,63 @@ function Row({ k, v }: { k: string; v: string }) {
     <div className="flex items-center justify-between py-1.5 border-b border-gray-100 last:border-b-0">
       <dt className="text-sm text-gray-500">{k}</dt>
       <dd className="text-base text-gray-900 font-medium">{v}</dd>
+    </div>
+  )
+}
+
+// Small FMCSA snapshot card shown inline after a Verify lookup. Mirrored
+// in Invoices.tsx so each screen can render its own without a shared
+// component (the two screens already duplicate small helpers for
+// isolation).
+function BrokerSnapshotCardInline({ snap }: { snap: import('../lib/ai').BrokerSnapshot }) {
+  const hasFatal   = snap.risk_flags.some(f => f === 'out_of_service' || f === 'not_authorized')
+  const hasWarning = !hasFatal && snap.risk_flags.length > 0
+  const tone = hasFatal
+    ? { bg: 'rgb(254, 226, 226)', border: '#fca5a5', text: '#991b1b' }
+    : hasWarning
+      ? { bg: 'rgb(254, 243, 199)', border: '#fcd34d', text: '#92400e' }
+      : { bg: 'rgb(220, 252, 231)', border: '#86efac', text: '#14532d' }
+  const FLAG_LABEL: Record<string, string> = {
+    out_of_service:    'Out of service',
+    not_authorized:    'Not authorized',
+    high_vehicle_oos:  'High vehicle OOS rate',
+    high_driver_oos:   'High driver OOS rate',
+    no_name_on_record: 'Missing legal name',
+  }
+  return (
+    <div className="rounded-lg p-3 text-xs"
+      style={{ background: tone.bg, border: `1px solid ${tone.border}`, color: tone.text }}>
+      <div className="flex items-center justify-between mb-1.5">
+        <span className="font-semibold">{snap.legal_name || snap.dba_name || 'Unnamed carrier'}</span>
+        <span className="font-mono text-[10px] opacity-80">
+          {snap.mc_number ? `MC# ${snap.mc_number}` : snap.dot_number ? `DOT# ${snap.dot_number}` : ''}
+        </span>
+      </div>
+      {snap.operating_status && <p className="mb-0.5"><span className="opacity-70">Authority:</span> {snap.operating_status}</p>}
+      {snap.entity_type && <p className="mb-0.5"><span className="opacity-70">Entity:</span> {snap.entity_type}</p>}
+      {(snap.power_units != null || snap.drivers != null) && (
+        <p className="mb-0.5">
+          <span className="opacity-70">Fleet:</span> {snap.power_units ?? '—'} units · {snap.drivers ?? '—'} drivers
+        </p>
+      )}
+      {(snap.oos_rate_vehicle != null || snap.oos_rate_driver != null) && (
+        <p className="mb-0.5">
+          <span className="opacity-70">OOS:</span>{' '}
+          {snap.oos_rate_vehicle != null ? `vehicle ${snap.oos_rate_vehicle}%` : ''}
+          {snap.oos_rate_vehicle != null && snap.oos_rate_driver != null ? ' · ' : ''}
+          {snap.oos_rate_driver != null ? `driver ${snap.oos_rate_driver}%` : ''}
+        </p>
+      )}
+      {snap.risk_flags.length > 0 && (
+        <div className="mt-1.5 flex flex-wrap gap-1">
+          {snap.risk_flags.map(f => (
+            <span key={f} className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold"
+              style={{ background: tone.text, color: tone.bg }}>
+              {FLAG_LABEL[f] ?? f}
+            </span>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

@@ -1,0 +1,165 @@
+// Broker FMCSA lookup. Accepts an MC number (or DOT number), fetches the
+// carrier snapshot from SAFER's public endpoint, scrapes the key fields,
+// and returns a typed JSON object the iOS quick-add broker form can use
+// to pre-fill name/phone/address and flag risky carriers.
+//
+// No FMCSA API key required — this hits the same HTML page any driver can
+// see at safer.fmcsa.dot.gov. Parsing is tolerant of whitespace and minor
+// markup changes; if FMCSA reshuffles the page we return a clear error
+// rather than garbage.
+//
+// Why server-side: the SAFER endpoint blocks browser fetches via CORS,
+// and the extension into QCMobile (if we ever need richer data) needs a
+// webKey we don't want on the phone.
+
+const CORS_HEADERS: Record<string, string> = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+}
+
+interface BrokerSnapshot {
+  mc_number:     string | null
+  dot_number:    string | null
+  legal_name:    string | null
+  dba_name:      string | null
+  physical_address: string | null
+  phone:         string | null
+  entity_type:   string | null   // e.g. "CARRIER", "BROKER"
+  operating_status: string | null  // e.g. "AUTHORIZED FOR Property", "OUT-OF-SERVICE"
+  mcs150_date:   string | null
+  oos_rate_vehicle: number | null  // 0-100 (%)
+  oos_rate_driver:  number | null
+  power_units:   number | null
+  drivers:       number | null
+  /** Opinionated summary flag the client can use to render a warning chip. */
+  risk_flags: string[]
+}
+
+Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') return new Response(null, { headers: CORS_HEADERS })
+  if (req.method !== 'POST') {
+    return new Response('Method not allowed', { status: 405, headers: CORS_HEADERS })
+  }
+
+  let body: { mc_number?: string; dot_number?: string }
+  try {
+    body = await req.json()
+  } catch {
+    return json({ error: 'invalid JSON body' }, 400)
+  }
+
+  const mc  = (body.mc_number  ?? '').replace(/\D/g, '')
+  const dot = (body.dot_number ?? '').replace(/\D/g, '')
+  if (!mc && !dot) {
+    return json({ error: 'mc_number or dot_number required' }, 400)
+  }
+
+  // SAFER carrier snapshot. Either MC or USDOT works — the same page
+  // format is returned. MC is what brokers typically quote.
+  const queryType = mc ? 'queryCarrierSnapshot' : 'queryCarrierSnapshot'
+  const param     = mc ? 'MC_MX' : 'USDOT'
+  const value     = mc || dot
+  const url = `https://safer.fmcsa.dot.gov/query.asp?searchtype=ANY&query_type=${queryType}&query_param=${param}&query_string=${value}`
+
+  try {
+    const res = await fetch(url, {
+      headers: {
+        // SAFER sometimes blocks empty UAs. A realistic browser string keeps
+        // them happy without pretending to be anything sophisticated.
+        'User-Agent': 'Mozilla/5.0 (compatible; DrivenTMS/1.0)',
+        'Accept':     'text/html',
+      },
+    })
+    if (!res.ok) return json({ error: `SAFER returned ${res.status}` }, 502)
+    const html = await res.text()
+
+    // The snapshot page has a fixed set of labeled cells. If the lookup
+    // missed, SAFER returns a "Record Not Found" marker — surface that
+    // cleanly instead of handing back an empty object.
+    if (/Record Not Found/i.test(html)) {
+      return json({ error: 'No FMCSA record for that MC/DOT number' }, 404)
+    }
+    if (/Record Inactive/i.test(html) && !/Legal Name/i.test(html)) {
+      return json({ error: 'FMCSA record is inactive' }, 404)
+    }
+
+    const snap = parseSnapshot(html)
+    snap.mc_number  = mc || snap.mc_number
+    snap.dot_number = dot || snap.dot_number
+    snap.risk_flags = deriveRiskFlags(snap)
+    return json({ snapshot: snap })
+  } catch (e) {
+    console.error('check-broker error:', e)
+    const msg = e instanceof Error ? e.message : 'lookup failed'
+    return json({ error: msg }, 502)
+  }
+})
+
+function json(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'content-type': 'application/json', ...CORS_HEADERS },
+  })
+}
+
+// Parse the SAFER carrier-snapshot HTML. Each field sits in a <TD> labeled
+// by the preceding <TH>; the tolerant regex handles whitespace and the
+// nbsp-heavy formatting SAFER emits.
+function parseSnapshot(html: string): BrokerSnapshot {
+  const get = (label: string): string | null => {
+    const re = new RegExp(
+      `<TH[^>]*>\\s*${escapeRegex(label)}\\s*:?\\s*</TH>\\s*<TD[^>]*>([\\s\\S]*?)</TD>`,
+      'i',
+    )
+    const m = html.match(re)
+    if (!m) return null
+    return cleanText(m[1])
+  }
+
+  const powerUnitsRaw = get('Power Units')
+  const driversRaw    = get('Drivers')
+  const vehOOSRaw     = html.match(/Vehicle\s*[\s\S]*?(\d{1,3}(?:\.\d+)?)\s*%/i)?.[1]
+  const drvOOSRaw     = html.match(/Driver\s*[\s\S]*?(\d{1,3}(?:\.\d+)?)\s*%/i)?.[1]
+
+  return {
+    mc_number:        null,
+    dot_number:       get('USDOT Number'),
+    legal_name:       get('Legal Name'),
+    dba_name:         get('DBA Name'),
+    physical_address: get('Physical Address'),
+    phone:            get('Phone'),
+    entity_type:      get('Entity Type'),
+    operating_status: get('Operating Status'),
+    mcs150_date:      get('MCS-150 Form Date'),
+    oos_rate_vehicle: vehOOSRaw ? parseFloat(vehOOSRaw) : null,
+    oos_rate_driver:  drvOOSRaw ? parseFloat(drvOOSRaw) : null,
+    power_units:      powerUnitsRaw ? parseInt(powerUnitsRaw.replace(/\D/g, ''), 10) || null : null,
+    drivers:          driversRaw    ? parseInt(driversRaw.replace(/\D/g, ''),    10) || null : null,
+    risk_flags:       [],
+  }
+}
+
+function deriveRiskFlags(s: BrokerSnapshot): string[] {
+  const flags: string[] = []
+  if (s.operating_status && /out.of.service/i.test(s.operating_status)) flags.push('out_of_service')
+  if (s.operating_status && /not authorized/i.test(s.operating_status)) flags.push('not_authorized')
+  if (s.oos_rate_vehicle != null && s.oos_rate_vehicle >= 20) flags.push('high_vehicle_oos')
+  if (s.oos_rate_driver  != null && s.oos_rate_driver  >= 10) flags.push('high_driver_oos')
+  if (!s.legal_name) flags.push('no_name_on_record')
+  return flags
+}
+
+function cleanText(raw: string): string | null {
+  const stripped = raw
+    .replace(/<[^>]+>/g, ' ')    // strip inner tags
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return stripped.length > 0 ? stripped : null
+}
+
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
