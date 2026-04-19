@@ -112,16 +112,16 @@ export function Invoices({ driver }: { driver: Driver }) {
   const [tab, setTab] = useState<'outstanding' | 'paid'>('outstanding')
 
   // All invoices tied to this driver's loads, plus any manually-created
-  // invoices that aren't attached to a load yet. The left join on loads lets
-  // invoices with a null load_id through; we filter by driver_id on any
-  // joined load server-side and ignore orphan rows that join to another
-  // driver's load client-side.
+  // invoices that aren't attached to a load yet. Filtering happens
+  // client-side — PostgREST's `.or()` can't mix a parent filter
+  // (`load_id.is.null`) with a foreign-table filter (`loads.driver_id...`)
+  // in a single expression, so the whole query used to silently return
+  // zero rows.
   const { data: invoices = [], isLoading } = useQuery({
     queryKey: ['my-invoices', driver.id],
     queryFn: async () => {
       const { data, error } = await supabase.from('invoices')
         .select('*, loads(id, load_number, origin_city, origin_state, dest_city, dest_state, miles, driver_id), brokers(id, name, email, phone, mc_number, dot_number), customers(id, name, email, phone, mc_number, dot_number)')
-        .or(`load_id.is.null,loads.driver_id.eq.${driver.id}`)
         .order('created_at', { ascending: false })
       if (error) throw error
       const rows = (data ?? []) as unknown as (Invoice & { loads: (Invoice['loads'] & { driver_id?: string }) | null })[]
@@ -731,7 +731,7 @@ export function InvoiceFormSheet({ driverId, editing, onClose }: {
   // Inline "add new" state — opened when the bill-to picker's "+ New" option
   // is chosen. Creates the broker / customer and auto-selects it.
   const [quickAdd, setQuickAdd] = useState<'broker' | 'customer' | null>(null)
-  const [qa, setQa] = useState({ name: '', email: '', phone: '', mc: '', address: '' })
+  const [qa, setQa] = useState({ name: '', email: '', phone: '', mc: '', dot: '', address: '' })
   const [qaError, setQaError] = useState<string | null>(null)
   const setQa_ = (k: keyof typeof qa, v: string) => setQa(f => ({ ...f, [k]: v }))
 
@@ -747,12 +747,13 @@ export function InvoiceFormSheet({ driverId, editing, onClose }: {
       const { checkBroker } = await import('../lib/ai')
       const snap = await checkBroker({ mc })
       setFmcsaSnap(snap)
-      // Pre-fill name / phone / address if the driver hasn't typed anything.
+      // Pre-fill name / phone / address / DOT# if the driver hasn't typed anything.
       setQa(f => ({
         ...f,
         name:    f.name    || snap.legal_name   || snap.dba_name || '',
         phone:   f.phone   || snap.phone        || '',
         address: f.address || snap.physical_address || '',
+        dot:     f.dot     || snap.dot_number   || '',
       }))
     } catch (e) {
       setQaError(`FMCSA lookup failed: ${(e as Error).message}`)
@@ -801,7 +802,8 @@ export function InvoiceFormSheet({ driverId, editing, onClose }: {
       const name = qa.name.trim()
       if (!name) throw new Error('Enter a broker name.')
       const { data, error } = await supabase.from('brokers').insert({
-        name, email: qa.email || null, phone: qa.phone || null, mc_number: qa.mc || null,
+        name, email: qa.email || null, phone: qa.phone || null,
+        mc_number: qa.mc || null, dot_number: qa.dot || null,
       }).select('id').single()
       if (error) throw error
       return (data as { id: string }).id
@@ -809,7 +811,7 @@ export function InvoiceFormSheet({ driverId, editing, onClose }: {
     onSuccess: (id) => {
       qc.invalidateQueries({ queryKey: ['brokers-simple'] })
       set('broker_id', id); set('customer_id', '')
-      setQuickAdd(null); setQa({ name: '', email: '', phone: '', mc: '', address: '' }); setQaError(null)
+      setQuickAdd(null); setQa({ name: '', email: '', phone: '', mc: '', dot: '', address: '' }); setQaError(null)
     },
     onError: (e: Error) => setQaError(e.message),
   })
@@ -820,6 +822,7 @@ export function InvoiceFormSheet({ driverId, editing, onClose }: {
       if (!name) throw new Error('Enter a customer name.')
       const { data, error } = await supabase.from('customers').insert({
         name, email: qa.email || null, phone: qa.phone || null, address: qa.address || null,
+        mc_number: qa.mc || null, dot_number: qa.dot || null,
       }).select('id').single()
       if (error) throw error
       return (data as { id: string }).id
@@ -827,7 +830,7 @@ export function InvoiceFormSheet({ driverId, editing, onClose }: {
     onSuccess: (id) => {
       qc.invalidateQueries({ queryKey: ['customers-simple'] })
       set('customer_id', id); set('broker_id', '')
-      setQuickAdd(null); setQa({ name: '', email: '', phone: '', mc: '', address: '' }); setQaError(null)
+      setQuickAdd(null); setQa({ name: '', email: '', phone: '', mc: '', dot: '', address: '' }); setQaError(null)
     },
     onError: (e: Error) => setQaError(e.message),
   })
@@ -1042,11 +1045,21 @@ export function InvoiceFormSheet({ driverId, editing, onClose }: {
                         {fmcsaBusy ? '…' : 'Verify'}
                       </button>
                     </div>
+                    <input value={qa.dot} onChange={e => setQa_('dot', e.target.value)} placeholder="DOT# (optional)"
+                      className="w-full px-3 py-2.5 rounded-lg bg-gray-50 border border-gray-200 text-base" />
                     {fmcsaSnap && <BrokerSnapshotCard snap={fmcsaSnap} />}
                   </div>
                 ) : (
-                  <input value={qa.address} onChange={e => setQa_('address', e.target.value)} placeholder="Address (optional)"
-                    className="w-full px-3 py-2.5 rounded-lg bg-gray-50 border border-gray-200 text-base" />
+                  <div className="space-y-2">
+                    <div className="grid grid-cols-2 gap-2">
+                      <input value={qa.mc} onChange={e => setQa_('mc', e.target.value)} placeholder="MC# (optional)"
+                        className="w-full px-3 py-2.5 rounded-lg bg-gray-50 border border-gray-200 text-base" />
+                      <input value={qa.dot} onChange={e => setQa_('dot', e.target.value)} placeholder="DOT# (optional)"
+                        className="w-full px-3 py-2.5 rounded-lg bg-gray-50 border border-gray-200 text-base" />
+                    </div>
+                    <input value={qa.address} onChange={e => setQa_('address', e.target.value)} placeholder="Address (optional)"
+                      className="w-full px-3 py-2.5 rounded-lg bg-gray-50 border border-gray-200 text-base" />
+                  </div>
                 )}
                 {qaError && <p className="text-xs text-red-600">{qaError}</p>}
                 <button type="button"
