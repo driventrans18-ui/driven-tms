@@ -144,28 +144,18 @@ function json(body: unknown, status = 200) {
 // NEXT <TD>…</TD>) rather than strict adjacency regex, which tolerates
 // all of SAFER's quirks.
 function parseSnapshot(html: string): BrokerSnapshot {
+  // SAFER wraps every label in an anchor: <TH><A ...>Label:</A></TH>
+  // so the match has to tolerate that. No tolerant fallback — if we
+  // can't find the labeled TH/TD pair the field genuinely isn't on the
+  // page (intrastate carriers have fewer rows than brokers/for-hire),
+  // and a looser match false-positives onto neighbouring cells.
   const findValue = (label: string): string | null => {
-    // Prefer a strict <TH>Label:</TH><TD>value</TD> match — that's what
-    // the main data table uses, and it avoids false matches against the
-    // JavaScript at the top of the page and the carrier-info header.
-    const strict = new RegExp(
-      `<TH[^>]*>\\s*${escapeRegex(label)}\\s*:?\\s*</TH>\\s*<TD[^>]*>([\\s\\S]*?)</TD>`,
+    const re = new RegExp(
+      `<TH[^>]*>\\s*(?:<A[^>]*>)?\\s*${escapeRegex(label)}\\s*:?\\s*(?:</A>)?\\s*</TH>\\s*<TD[^>]*>([\\s\\S]*?)</TD>`,
       'i',
     )
-    const sm = strict.exec(html)
-    if (sm) return cleanText(sm[1])
-
-    // Fall back to tolerant lookup only if the strict TH/TD pair missed
-    // (some SAFER layouts wrap the label in extra tags).
-    const loose = new RegExp(`>\\s*${escapeRegex(label)}\\s*:?\\s*<`, 'i')
-    const lm = loose.exec(html)
-    if (!lm) return null
-    const tdOpen = html.indexOf('<TD', lm.index + lm[0].length)
-    if (tdOpen === -1) return null
-    const tdContentStart = html.indexOf('>', tdOpen) + 1
-    const tdClose = html.indexOf('</TD>', tdContentStart)
-    if (tdClose === -1) return null
-    return cleanText(html.slice(tdContentStart, tdClose))
+    const m = re.exec(html)
+    return m ? cleanText(m[1]) : null
   }
 
   // Company name lives in a bare <B>…</B> in the snapshot header above
