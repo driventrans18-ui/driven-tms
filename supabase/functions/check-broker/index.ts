@@ -61,8 +61,8 @@ Deno.serve(async (req) => {
   // a follow-up lookup by DOT#.
   if (name && !mc && !dot) {
     try {
-      const candidates = await searchByName(name)
-      return json({ candidates })
+      const result = await searchByName(name, debug)
+      return json(result)
     } catch (e) {
       console.error('check-broker name search error:', e)
       return json({ error: e instanceof Error ? e.message : 'name search failed' })
@@ -269,44 +269,92 @@ interface NameCandidate {
 // a list of {legal_name, dot_number, location} candidates the UI can show
 // in a picker. The user then picks one and we re-query by DOT# for the
 // full snapshot via the existing queryCarrierSnapshot branch.
-async function searchByName(name: string): Promise<NameCandidate[]> {
-  const form = new URLSearchParams({
-    searchtype:   'ANY',
-    query_type:   'queryCarrierName',
-    query_param:  'NAME',
-    query_string: name,
-  })
-  const res = await fetch('https://safer.fmcsa.dot.gov/query.asp', {
-    method: 'POST',
-    headers: {
-      'User-Agent':    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15',
-      'Accept':        'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-      'Content-Type':  'application/x-www-form-urlencoded',
-      'Referer':       'https://safer.fmcsa.dot.gov/CompanySnapshot.aspx',
-    },
-    body: form.toString(),
-  })
-  if (!res.ok) throw new Error(`SAFER returned ${res.status}`)
-  const html = await res.text()
-  if (/Record Not Found/i.test(html) || /No records? match/i.test(html)) return []
+async function searchByName(name: string, debug = false): Promise<{ candidates: NameCandidate[]; diagnostic?: Record<string, unknown> }> {
+  const clean = name.replace(/\*/g, '').trim()
+  // Try multiple SAFER form shapes in order — the public keyword search
+  // form has changed over the years and Deno's fetch doesn't automatically
+  // follow the same redirects browsers do. We stop at the first attempt
+  // that yields parse-able results.
+  const attempts: Array<{ url: string; body: URLSearchParams; label: string }> = [
+    { label: 'keywordx_searchtype_empty', url: 'https://safer.fmcsa.dot.gov/keywordx.asp', body: new URLSearchParams({ searchstring: `*${clean}*`, SEARCHTYPE: '' }) },
+    { label: 'keywordx_searchtype_name',  url: 'https://safer.fmcsa.dot.gov/keywordx.asp', body: new URLSearchParams({ searchstring: `*${clean}*`, SEARCHTYPE: 'NAME' }) },
+    { label: 'keywordx_no_wildcards',     url: 'https://safer.fmcsa.dot.gov/keywordx.asp', body: new URLSearchParams({ searchstring: clean,         SEARCHTYPE: '' }) },
+  ]
 
-  // SAFER's name-results page lists each match as:
-  //   <a href="query.asp?...query_param=USDOT&query_string=XXXXXX">NAME</a>
-  //   …<b>DOT#: NNNNNN</b>  …CITY, ST
-  // We parse by iterating anchors whose href includes query_param=USDOT and
-  // whose context contains the DOT # + a CITY, ST blob.
-  const anchorRe = /<a[^>]+href="[^"]*query_param=USDOT&amp;query_string=(\d+)[^"]*"[^>]*>([^<]+)<\/a>/gi
+  const diagnostic: Record<string, unknown> = { attempts: [] }
+  for (const a of attempts) {
+    const res = await fetch(a.url, {
+      method: 'POST',
+      headers: {
+        'User-Agent':    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15',
+        'Accept':        'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Content-Type':  'application/x-www-form-urlencoded',
+        'Referer':       'https://safer.fmcsa.dot.gov/CompanySnapshot.aspx',
+      },
+      body: a.body.toString(),
+      redirect: 'follow',
+    })
+    const html = await res.text()
+    // Dump ~500 chars of raw HTML around the first USDOT-param occurrence
+    // so we can see the exact anchor / link markup SAFER uses.
+    const usdotIdx = html.toLowerCase().indexOf('query_param=usdot')
+    const usdotContext = usdotIdx >= 0
+      ? html.slice(Math.max(0, usdotIdx - 200), usdotIdx + 500)
+      : null
+    const attemptInfo = {
+      label: a.label,
+      status: res.status,
+      html_length: html.length,
+      contains_record_not_found: /Record Not Found|No records? match/i.test(html),
+      contains_too_many: /Too many records/i.test(html),
+      contains_usdot_link: /query_param=USDOT/i.test(html),
+      title: html.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1]?.trim() ?? null,
+      preview: html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 300),
+      usdot_context_raw: usdotContext,
+    }
+    ;(diagnostic.attempts as unknown[]).push(attemptInfo)
+    if (!res.ok) continue
+    if (/Record Not Found|No records? match|Too many records/i.test(html)) continue
+
+    const parsed = parseNameResults(html)
+    if (parsed.length > 0) {
+      return debug ? { candidates: parsed, diagnostic } : { candidates: parsed }
+    }
+  }
+  return debug ? { candidates: [], diagnostic } : { candidates: [] }
+}
+
+function parseNameResults(html: string): NameCandidate[] {
+
+  // Results row pattern on keywordx.asp looks like:
+  //   <a href="query.asp?searchtype=ANY&query_type=queryCarrierSnapshot&
+  //     query_param=USDOT&original_query_string=...&query_string=NNNNN">
+  //     CARRIER NAME
+  //   </a>
+  // The anchor may use single or double quotes and the ampersand may or
+  // may not be HTML-encoded. We match either form and extract the DOT#
+  // from the final query_string param.
+  const anchorRe = /<a[^>]+href=['"]([^'"]*query_param=USDOT[^'"]*)['"][^>]*>\s*([^<]+?)\s*<\/a>/gi
   const seen = new Set<string>()
   const out: NameCandidate[] = []
   let m: RegExpExecArray | null
   while ((m = anchorRe.exec(html)) !== null) {
-    const dot = m[1]
+    const href = m[1].replace(/&amp;/g, '&')
+    // SAFER's URLs look like `...&query_param=USDOT&...&query_string=NNNN
+    // &original_query_string=XXXX`. We want the numeric one — "&query_string="
+    // matches the first form but NOT "&original_query_string=" because the
+    // character before "original" is `l`, not `?` or `&`.
+    const dotMatch = href.match(/[?&]query_string=(\d+)/)
+    if (!dotMatch) continue
+    const dot = dotMatch[1]
     if (seen.has(dot)) continue
     seen.add(dot)
     const legal = cleanText(m[2]) ?? ''
-    // Look ~400 chars after the anchor for a CITY, ST pattern.
-    const after = html.slice(m.index, m.index + 600)
-    const loc = after.match(/>\s*([A-Z][A-Z\s.&'-]{1,40},\s*[A-Z]{2})\s*</)?.[1] ?? null
+    if (!legal) continue
+    // Location (CITY, ST) usually sits a few cells to the right in the
+    // same table row. Look in the ~800 chars after the anchor.
+    const after = html.slice(m.index, m.index + 800)
+    const loc = after.match(/>\s*([A-Z][A-Z\s.&'-]{1,50},\s*[A-Z]{2})\s*</)?.[1] ?? null
     out.push({ legal_name: legal, dot_number: dot, location: loc })
     if (out.length >= 25) break
   }
