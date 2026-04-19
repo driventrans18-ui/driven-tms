@@ -5,6 +5,7 @@ import { cacheGet, cacheSet } from '../lib/cache'
 import { uploadBol } from '../lib/bolDocuments'
 import { captureStampedPhoto } from '../lib/stampedCamera'
 import { LoadCard, type LoadCardLoad } from '../components/LoadCard'
+import { LoadAIAssistSheet } from '../components/LoadAIAssistSheet'
 import { RemindersCard } from '../components/RemindersCard'
 import { LoadCalendar } from '../components/LoadCalendar'
 import { ScreenHeader } from '../components/ScreenHeader'
@@ -167,6 +168,7 @@ export function Home({ driver, onGoToLoads, onOpenDriverMode }: {
   const [freightPickerOpen, setFreightPickerOpen] = useState(false)
   const [podPickerOpen, setPodPickerOpen] = useState(false)
   const [carrierLookupOpen, setCarrierLookupOpen] = useState(false)
+  const [aiAssistLoadId, setAiAssistLoadId] = useState<string | null>(null)
 
   const captureFreight = useMutation({
     mutationFn: async (target: { id: string; loadRef: string }) => {
@@ -274,6 +276,16 @@ export function Home({ driver, onGoToLoads, onOpenDriverMode }: {
               <path d="M3 11l18-8-8 18-2-8-8-2z" />
             </svg>
             Driver Mode
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setAiAssistLoadId(activeLoad.id)}
+            className="mt-2 w-full min-h-12 rounded-2xl bg-white border text-base font-semibold active:bg-gray-50 cursor-pointer flex items-center justify-center gap-2"
+            style={{ borderColor: 'var(--color-brand-500)', color: 'var(--color-brand-500)' }}
+          >
+            <span aria-hidden>✨</span>
+            Ask AI about this load
           </button>
 
           <button
@@ -398,6 +410,17 @@ export function Home({ driver, onGoToLoads, onOpenDriverMode }: {
           setPodPickerOpen(false)
           scanPod.mutate({ id, loadRef })
         }}
+      />
+    )}
+    {aiAssistLoadId && (
+      <LoadAIAssistSheet
+        loadId={aiAssistLoadId}
+        loadLabel={
+          activeLoad && activeLoad.id === aiAssistLoadId
+            ? (activeLoad.load_number || `#${activeLoad.id.slice(0, 8)}`)
+            : `#${aiAssistLoadId.slice(0, 8)}`
+        }
+        onClose={() => setAiAssistLoadId(null)}
       />
     )}
     </>
