@@ -102,7 +102,8 @@
    dark mode so the whole app flips without churn. */
 
 :root[data-theme="dark"] .bg-white,
-:root[data-theme="dark"] .bg-white\/90 {
+:root[data-theme="dark"] .bg-white\/90,
+:root[data-theme="dark"] .bg-white\/95 {
   background-color: var(--color-surface-card);
 }
 :root[data-theme="dark"] .bg-\[\#f2f2f7\] {
@@ -135,7 +136,8 @@
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .bg-white,
-  :root:not([data-theme="light"]) .bg-white\/90 {
+  :root:not([data-theme="light"]) .bg-white\/90,
+  :root:not([data-theme="light"]) .bg-white\/95 {
     background-color: var(--color-surface-card);
   }
   :root:not([data-theme="light"]) .bg-\[\#f2f2f7\] {

@@ -73,7 +73,7 @@ function StatCell({ label, value, valueColor }: { label: string; value: string; 
   return (
     <div className="p-4 first:border-r-0 [&:nth-child(odd)]:border-r border-gray-100">
       <p className="text-xs text-gray-500">{label}</p>
-      <p className="text-2xl font-bold mt-0.5" style={valueColor ? { color: valueColor } : { color: '#111827' }}>
+      <p className="text-2xl font-bold mt-0.5" style={valueColor ? { color: valueColor } : { color: 'var(--color-text-primary)' }}>
         {value}
       </p>
     </div>

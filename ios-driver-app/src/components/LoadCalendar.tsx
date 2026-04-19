@@ -129,7 +129,7 @@ export function LoadCalendar({ driverId }: { driverId: string }) {
                 isSel ? 'ring-2 ring-[var(--color-brand-500)]' : ''
               }`}
               style={{
-                color: inMonth ? (isToday ? 'var(--color-brand-500)' : '#111827') : '#d1d5db',
+                color: inMonth ? (isToday ? 'var(--color-brand-500)' : 'var(--color-text-primary)') : 'var(--color-text-tertiary)',
                 fontWeight: isToday ? 700 : 500,
                 background: isSel ? 'rgba(200,65,10,0.06)' : 'transparent',
               }}
