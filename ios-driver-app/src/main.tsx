@@ -13,11 +13,20 @@ bootstrapTheme()
 installKeyboardTracking()
 
 // Make the native status bar overlay the webview so the app background
-// extends under the dynamic island instead of leaving an opaque strip.
+// extends under the dynamic island. Style tracks the effective theme so
+// the clock / battery icons stay readable against the OLED-black bg.
 if (Capacitor.isNativePlatform()) {
   import('@capacitor/status-bar').then(({ StatusBar, Style }) => {
     StatusBar.setOverlaysWebView({ overlay: true }).catch(() => {})
-    StatusBar.setStyle({ style: Style.Default }).catch(() => {})
+    const sync = () => {
+      const attr = document.documentElement.getAttribute('data-theme')
+      const isDark = attr === 'dark'
+        || (attr !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches)
+      StatusBar.setStyle({ style: isDark ? Style.Light : Style.Dark }).catch(() => {})
+    }
+    sync()
+    new MutationObserver(sync).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', sync)
   }).catch(() => {})
 }
 
