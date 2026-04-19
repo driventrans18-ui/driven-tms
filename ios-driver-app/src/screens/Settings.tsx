@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTheme, type ThemeMode } from '../hooks/useTheme'
+import { useMapsPref, MAPS_PROVIDERS } from '../hooks/useMapsPref'
 import { supabase } from '../lib/supabase'
 
 // Settings sheet — full-screen overlay that respects safe-area insets.
@@ -30,6 +31,7 @@ const EMPTY_COMPANY: CompanyInfo = {
 
 export function Settings({ onClose }: { onClose: () => void }) {
   const { mode, setTheme } = useTheme()
+  const { provider, setMapsProvider } = useMapsPref()
 
   const options: Array<{ key: ThemeMode; label: string; hint: string }> = [
     { key: 'system', label: 'System', hint: 'Match iOS appearance' },
@@ -61,6 +63,39 @@ export function Settings({ onClose }: { onClose: () => void }) {
         style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0) + 40px)' }}
       >
         <CompanyInfoSection />
+
+        <section>
+          <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide px-1 mb-2">Maps App</h2>
+          <div className="bg-white rounded-2xl divide-y divide-gray-100">
+            {MAPS_PROVIDERS.map(opt => {
+              const selected = provider === opt.key
+              return (
+                <button
+                  key={opt.key}
+                  onClick={() => setMapsProvider(opt.key)}
+                  className="w-full flex items-center justify-between px-5 py-3.5 text-left cursor-pointer active:bg-gray-50"
+                >
+                  <span>
+                    <span className="block text-base font-medium text-gray-900">{opt.label}</span>
+                    <span className="block text-xs text-gray-500 mt-0.5">{opt.hint}</span>
+                  </span>
+                  {selected && (
+                    <svg
+                      viewBox="0 0 24 24" width="20" height="20" fill="none"
+                      stroke="var(--color-brand-500)" strokeWidth="2.4"
+                      strokeLinecap="round" strokeLinejoin="round" aria-hidden
+                    >
+                      <path d="M5 12l5 5 9-11" />
+                    </svg>
+                  )}
+                </button>
+              )
+            })}
+          </div>
+          <p className="text-xs text-gray-500 px-1 mt-2">
+            Controls which app opens when you tap a pickup / delivery address or the Navigate button in Driver Mode.
+          </p>
+        </section>
 
         <section>
           <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide px-1 mb-2">Appearance</h2>

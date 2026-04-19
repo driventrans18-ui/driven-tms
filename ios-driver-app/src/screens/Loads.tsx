@@ -11,6 +11,7 @@ import { captureStampedPhoto } from '../lib/stampedCamera'
 import { uploadBol } from '../lib/bolDocuments'
 import { estimateMiles } from '../lib/estimateMiles'
 import { parseRateCon, type RateConPrefill } from '../lib/ai'
+import { buildMapsUrl } from '../hooks/useMapsPref'
 import type { Driver } from '../hooks/useDriver'
 
 type DocKind = 'rate_con' | 'pod' | 'freight' | 'other'
@@ -59,11 +60,11 @@ function fmtAppt(d: string | null) {
   return new Date(d).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
 }
 
-// Apple Maps URL — iOS turns maps:// into native Maps; falls back to web Maps
-// on the simulator.
+// Routes through the driver's maps preference (Settings → Maps App).
+// Defaults to Google Maps but honours Apple Maps / Waze / Trucker Path
+// when the driver has picked one.
 function mapsUrl(parts: Array<string | null>) {
-  const q = parts.filter(Boolean).join(', ')
-  return `https://maps.apple.com/?daddr=${encodeURIComponent(q)}`
+  return buildMapsUrl(parts)
 }
 
 // 5-star picker. Tap the same star twice to clear.
