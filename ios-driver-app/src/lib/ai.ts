@@ -227,6 +227,98 @@ export async function draftBrokerEmail(args: {
   }
 }
 
+// ── Load message drafter (email / notes) ────────────────────────────────────
+
+export type LoadMessageFormat = 'email' | 'notes'
+
+export interface LoadMessageDraft {
+  format:       LoadMessageFormat
+  subject:      string | null
+  body:         string | null
+  notes:        string | null
+  broker_email: string | null
+}
+
+// Ask Claude to produce either a broker email (subject + body) or a
+// dispatch-style notes blob for a specific load. The edge function
+// server-side-fetches the load / broker / company rows so we never ship
+// PII in the request body.
+export async function draftLoadMessage(args: {
+  loadId:        string
+  format:        LoadMessageFormat
+  extraContext?: string
+}): Promise<{ draft: LoadMessageDraft; usage: RateConUsage }> {
+  const { data, error } = await supabase.functions.invoke('draft-load-message', {
+    body: {
+      load_id:       args.loadId,
+      format:        args.format,
+      extra_context: args.extraContext ?? '',
+    },
+  })
+  if (error) throw await expandFunctionError(error, 'draft-load-message')
+  const res = data as {
+    format?: LoadMessageFormat
+    subject?: string | null; body?: string | null; notes?: string | null
+    broker_email?: string | null
+    usage?: RateConUsage; error?: string
+  }
+  if (res?.error) throw new Error(res.error)
+  if (!res?.format) throw new Error('draft-load-message returned no format')
+  const usage = res.usage ?? { input: 0, output: 0, cache_read: 0, cache_write: 0 }
+  void logAiUsage('draft_load_message', usage)
+  return {
+    draft: {
+      format:       res.format,
+      subject:      res.subject ?? null,
+      body:         res.body    ?? null,
+      notes:        res.notes   ?? null,
+      broker_email: res.broker_email ?? null,
+    },
+    usage,
+  }
+}
+
+// ── Load profitability + routing analyst ────────────────────────────────────
+
+export type LoadVerdict = 'good' | 'fair' | 'bad'
+
+export interface LoadAnalysis {
+  verdict:       LoadVerdict
+  summary:       string
+  rpm:           number | null
+  loaded_rpm:    number | null
+  reference_rpm: number | null
+  route: {
+    summary:     string
+    distance_mi: number | null
+    drive_hours: number | null
+    stops:       string[]
+  }
+  pros:          string[]
+  cons:          string[]
+  risks:         string[]
+  recommendation:string
+}
+
+// Ask Claude to evaluate whether a load is worth running. Returns a
+// structured verdict + RPM vs. the driver's own recent history + a
+// suggested interstate route. Sonnet-backed because trip planning
+// benefits from deeper reasoning than Haiku.
+export async function analyzeLoad(
+  loadId: string,
+): Promise<{ analysis: LoadAnalysis; usage: RateConUsage }> {
+  const { data, error } = await supabase.functions.invoke('analyze-load', {
+    body: { load_id: loadId },
+  })
+  if (error) throw await expandFunctionError(error, 'analyze-load')
+  const res = data as { analysis?: LoadAnalysis; usage?: RateConUsage; error?: string }
+  if (res?.error) throw new Error(res.error)
+  if (!res?.analysis) throw new Error('analyze-load returned no analysis')
+  const usage = res.usage ?? { input: 0, output: 0, cache_read: 0, cache_write: 0 }
+  void logAiUsage('analyze_load', usage)
+  return { analysis: res.analysis, usage }
+}
+
 // ── Dock-note polisher ──────────────────────────────────────────────────────
 
 // Send a raw dictation blob to Claude Haiku for polish into a tight
