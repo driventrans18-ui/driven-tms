@@ -34,6 +34,7 @@ interface Invoice {
   paid_date: string | null
   status: InvoiceStatus
   notes: string | null
+  description: string | null
   created_at: string
   loads: {
     id: string
@@ -375,7 +376,11 @@ function InvoiceSheet({ invoice, driverId, onClose }: {
     const { logoToDataUrl, measureDataUrl } = await import('../lib/invoicePdf')
     const companyName = settings?.company_name ?? 'Driven Transportation'
     const invoiceLabel = invoice.invoice_number || `${invoice.id.slice(0, 8)}`
-    const routeDesc = origin && dest ? `${loadLabel} · ${origin} → ${dest}` : `Load ${loadLabel}`
+    // Prefer the user-edited description; otherwise derive one from the load.
+    // 'to' is used instead of '→' because jsPDF's default Helvetica doesn't
+    // include the arrow glyph and renders it as garbage.
+    const autoRoute = origin && dest ? `${loadLabel} - ${origin} to ${dest}` : `Load ${loadLabel}`
+    const routeDesc = invoice.description?.trim() || autoRoute
     const logoDataUrl = logoUrl ? await logoToDataUrl(logoUrl) : null
     const logoDims    = logoDataUrl ? await measureDataUrl(logoDataUrl) : null
     const data: InvoicePdfData = {
@@ -598,6 +603,7 @@ export function InvoiceFormSheet({ driverId, editing, onClose }: {
     due_date:       editing?.due_date    ?? addDays(null, 30),
     paid_date:      editing?.paid_date   ?? '',
     status:         editing?.status      ?? ('Draft' as InvoiceStatus),
+    description:    editing?.description ?? '',
     notes:          editing?.notes       ?? '',
     load_id:        editing?.load_id     ?? '',
     broker_id:      editing?.broker_id   ?? '',
@@ -768,7 +774,8 @@ export function InvoiceFormSheet({ driverId, editing, onClose }: {
       const loadLabel = lo?.load_number || (form.load_id ? `#${form.load_id.slice(0, 8)}` : '—')
       const origin    = lo ? [lo.origin_city, lo.origin_state].filter(Boolean).join(', ') : ''
       const dest      = lo ? [lo.dest_city,   lo.dest_state].filter(Boolean).join(', ')   : ''
-      const routeDesc = origin && dest ? `${loadLabel} · ${origin} → ${dest}` : lo ? `Load ${loadLabel}` : 'Transportation services'
+      const autoRoute = origin && dest ? `${loadLabel} - ${origin} to ${dest}` : lo ? `Load ${loadLabel}` : 'Transportation services'
+      const routeDesc = form.description.trim() || autoRoute
 
       const invoiceLabel = form.invoice_number || 'Preview'
       const blob = generateInvoicePdf({
@@ -821,6 +828,7 @@ export function InvoiceFormSheet({ driverId, editing, onClose }: {
         due_date:       form.due_date    || null,
         paid_date:      form.status === 'Paid' ? (form.paid_date || new Date().toISOString().slice(0, 10)) : null,
         status:         form.status,
+        description:    form.description || null,
         notes:          form.notes || null,
         load_id:        form.load_id     || null,
         broker_id:      form.broker_id   || null,
@@ -994,6 +1002,14 @@ export function InvoiceFormSheet({ driverId, editing, onClose }: {
                 className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-base" />
             </div>
           )}
+
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Description (line item)</label>
+            <textarea value={form.description} onChange={e => set('description', e.target.value)}
+              placeholder="Leave blank to auto-generate from the load (e.g. LD-0092 - Rochester, NY to Orlando, FL)"
+              rows={2}
+              className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-base" />
+          </div>
 
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Notes</label>
