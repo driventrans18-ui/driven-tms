@@ -1,9 +1,13 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Capacitor } from '@capacitor/core'
 import { supabase } from '../lib/supabase'
 import { ScreenHeader, IconButton } from '../components/ScreenHeader'
 import type { Driver } from '../hooks/useDriver'
+
+// Allowed CDL classes — matches the web admin driver form so values
+// round-trip cleanly between portals.
+const CDL_OPTIONS = ['Class A', 'Class B', 'Class C', 'Non-CDL'] as const
 
 const PHOTO_BUCKET = 'driver-photos'
 
@@ -77,6 +81,33 @@ export function Profile({ driver, email, onOpenBrokers, onOpenCustomers, onOpenS
     },
     onError: (e: Error) => setUploadErr(e.message),
   })
+
+  // Patch the driver row. Used by every editable field below — each one
+  // passes a single-column object (e.g. { phone: '555-0100' }) so errors
+  // are easy to surface per field.
+  const updateDriver = useMutation({
+    mutationFn: async (patch: Partial<Driver>) => {
+      const { error } = await supabase.from('drivers').update(patch).eq('id', driver.id)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['me-driver'] })
+    },
+  })
+
+  // Full name edits come in as a single string; split on the first space
+  // so "Mary Jane Smith" becomes first="Mary", last="Jane Smith". Empty
+  // strings get stored as null so the column stays consistent.
+  function saveName(v: string) {
+    const trimmed = v.trim()
+    if (!trimmed) {
+      return updateDriver.mutateAsync({ first_name: null, last_name: null })
+    }
+    const idx = trimmed.indexOf(' ')
+    const first = idx === -1 ? trimmed : trimmed.slice(0, idx)
+    const last  = idx === -1 ? null    : trimmed.slice(idx + 1).trim() || null
+    return updateDriver.mutateAsync({ first_name: first, last_name: last })
+  }
 
   const removePhoto = useMutation({
     mutationFn: async () => {
@@ -160,16 +191,6 @@ export function Profile({ driver, email, onOpenBrokers, onOpenCustomers, onOpenS
           ) : (
             <span>{initials}</span>
           )}
-          {/* Small camera overlay in the bottom-right corner */}
-          <span
-            className="absolute bottom-0 right-0 w-8 h-8 rounded-full bg-white border border-gray-200 flex items-center justify-center"
-            aria-hidden
-          >
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#6b7280" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z" />
-              <circle cx="12" cy="13" r="4" />
-            </svg>
-          </span>
         </button>
 
         {uploadPhoto.isPending && <p className="mt-2 text-xs text-gray-400">Uploading…</p>}
@@ -189,13 +210,43 @@ export function Profile({ driver, email, onOpenBrokers, onOpenCustomers, onOpenS
       </div>
 
       <Section title="Personal Info">
-        <Row k="Email" v={email ?? driver.email ?? '—'} />
-        <Row k="Phone" v={driver.phone ?? '—'} />
+        <EditableRow
+          k="Name"
+          v={fullName}
+          placeholder="Full name"
+          onSave={saveName}
+        />
+        <EditableRow
+          k="Email"
+          v={driver.email ?? email ?? ''}
+          placeholder="name@example.com"
+          type="email"
+          onSave={v => updateDriver.mutateAsync({ email: v.trim() || null })}
+        />
+        <EditableRow
+          k="Phone"
+          v={driver.phone ?? ''}
+          placeholder="(555) 555-5555"
+          type="tel"
+          onSave={v => updateDriver.mutateAsync({ phone: v.trim() || null })}
+        />
       </Section>
 
       <Section title="License">
-        <Row k="CDL"    v={driver.cdl_class ?? '—'} />
-        <Row k="Status" v={driver.status    ?? '—'} valueColor={driver.status === 'Active' ? '#15803d' : undefined} />
+        <EditableSelectRow
+          k="CDL"
+          v={driver.cdl_class ?? ''}
+          options={CDL_OPTIONS as unknown as string[]}
+          onSave={v => updateDriver.mutateAsync({ cdl_class: v || null })}
+        />
+        {/* Status is dispatch-managed: edits happen in the web admin so
+            drivers can't accidentally flip themselves to Inactive. */}
+        <Row
+          k="Status"
+          v={driver.status ?? '—'}
+          valueColor={driver.status === 'Active' ? '#15803d' : undefined}
+          note="Managed by dispatch (web portal)"
+        />
       </Section>
 
       <Section title="Assigned Truck">
@@ -272,16 +323,136 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   )
 }
 
-function Row({ k, v, valueColor, chevron }: {
-  k: string; v: string; valueColor?: string; chevron?: boolean
+function Row({ k, v, valueColor, chevron, note }: {
+  k: string; v: string; valueColor?: string; chevron?: boolean; note?: string
 }) {
   return (
-    <div className="flex items-center justify-between px-5 py-3.5 gap-3">
-      <span className="text-sm text-gray-500 shrink-0">{k}</span>
-      <span className="text-base font-medium text-right truncate" style={{ color: valueColor ?? 'var(--color-text-primary)' }}>
-        {v}
-      </span>
-      {chevron && <span className="text-gray-300 text-lg shrink-0">›</span>}
+    <div className="px-5 py-3.5">
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-sm text-gray-500 shrink-0">{k}</span>
+        <span className="text-base font-medium text-right truncate" style={{ color: valueColor ?? 'var(--color-text-primary)' }}>
+          {v}
+        </span>
+        {chevron && <span className="text-gray-300 text-lg shrink-0">›</span>}
+      </div>
+      {note && <p className="text-[11px] text-gray-400 mt-1 text-right">{note}</p>}
+    </div>
+  )
+}
+
+// Inline-editable row. Display mode looks identical to Row; tapping
+// anywhere on the row swaps in a text input, focuses it, and commits on
+// blur or Enter. Escape aborts without saving. Errors bubble up as a
+// small red line below the row so one bad save doesn't lock the driver
+// out of the rest of the form.
+function EditableRow({ k, v, placeholder, type = 'text', onSave }: {
+  k: string
+  v: string
+  placeholder?: string
+  type?: 'text' | 'email' | 'tel'
+  onSave: (next: string) => Promise<unknown>
+}) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(v)
+  const [busy, setBusy]  = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const inputRef = useRef<HTMLInputElement | null>(null)
+
+  useEffect(() => { if (!editing) setDraft(v) }, [v, editing])
+  useEffect(() => { if (editing) inputRef.current?.focus() }, [editing])
+
+  async function commit() {
+    if (!editing) return
+    if (draft === v) { setEditing(false); return }
+    setBusy(true); setError(null)
+    try {
+      await onSave(draft)
+      setEditing(false)
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  function cancel() {
+    setDraft(v); setError(null); setEditing(false)
+  }
+
+  return (
+    <div className="px-5 py-3 min-h-[52px] active:bg-gray-50 cursor-text"
+      onClick={() => { if (!editing) setEditing(true) }}>
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-sm text-gray-500 shrink-0">{k}</span>
+        {editing ? (
+          <input
+            ref={inputRef}
+            type={type}
+            value={draft}
+            placeholder={placeholder}
+            onChange={e => setDraft(e.target.value)}
+            onBlur={commit}
+            onKeyDown={e => {
+              if (e.key === 'Enter')  { e.preventDefault(); (e.target as HTMLInputElement).blur() }
+              if (e.key === 'Escape') { e.preventDefault(); cancel() }
+            }}
+            disabled={busy}
+            autoCapitalize={type === 'email' ? 'none' : 'words'}
+            autoCorrect={type === 'email' ? 'off' : 'on'}
+            className="flex-1 min-w-0 text-base font-medium text-right bg-transparent outline-none disabled:opacity-60"
+            style={{ color: 'var(--color-text-primary)' }}
+          />
+        ) : (
+          <span className="text-base font-medium text-right truncate flex-1"
+            style={{ color: v ? 'var(--color-text-primary)' : '#9ca3af' }}>
+            {v || placeholder || '—'}
+          </span>
+        )}
+      </div>
+      {error && <p className="text-[11px] text-red-600 mt-1 text-right">{error}</p>}
+    </div>
+  )
+}
+
+// Same pattern as EditableRow but for a fixed set of options. The native
+// <select> element gives us the iOS wheel picker for free.
+function EditableSelectRow({ k, v, options, onSave }: {
+  k: string
+  v: string
+  options: string[]
+  onSave: (next: string) => Promise<unknown>
+}) {
+  const [busy, setBusy]   = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function commit(next: string) {
+    if (next === v) return
+    setBusy(true); setError(null)
+    try {
+      await onSave(next)
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="px-5 py-3 min-h-[52px]">
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-sm text-gray-500 shrink-0">{k}</span>
+        <select
+          value={v}
+          disabled={busy}
+          onChange={e => commit(e.target.value)}
+          className="text-base font-medium text-right bg-transparent outline-none appearance-none disabled:opacity-60 cursor-pointer"
+          style={{ color: v ? 'var(--color-text-primary)' : '#9ca3af' }}
+        >
+          {!v && <option value="">—</option>}
+          {options.map(o => <option key={o} value={o}>{o}</option>)}
+        </select>
+      </div>
+      {error && <p className="text-[11px] text-red-600 mt-1 text-right">{error}</p>}
     </div>
   )
 }

@@ -5,6 +5,7 @@ import { captureBol, uploadBol } from '../lib/bolDocuments'
 import {
   Button, InlineError, impactMedium, impactHeavy, notifySuccess, notifyError,
 } from '../components/ui'
+import { buildMapsUrl } from '../hooks/useMapsPref'
 import type { Driver } from '../hooks/useDriver'
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -134,8 +135,7 @@ export function DriverMode({ driver, onExit }: { driver: Driver; onExit: () => v
   function openNavigation() {
     if (!stopCity) return
     void impactMedium()
-    const q = [stopCity, stopState].filter(Boolean).join(', ')
-    window.location.href = `https://maps.apple.com/?daddr=${encodeURIComponent(q)}`
+    window.location.href = buildMapsUrl([stopCity, stopState])
   }
 
   return (

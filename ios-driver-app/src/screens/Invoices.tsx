@@ -19,6 +19,7 @@ interface DeliveredLoad {
   dest_state: string | null
   miles: number | null
   rate: number | null
+  apply_factoring: boolean | null
   brokers: { id: string; name: string; email: string | null; phone: string | null } | null
 }
 
@@ -37,6 +38,7 @@ interface Invoice {
   description: string | null
   discount_pct: number | null
   tax_pct: number | null
+  apply_factoring: boolean | null
   last_viewed_at: string | null
   view_count: number | null
   created_at: string
@@ -73,10 +75,20 @@ interface CompanySettings {
 // Round currency to 2 decimals to dodge floating-point garbage like 71.99999.
 function roundMoney(n: number) { return Math.round(n * 100) / 100 }
 
+// Resolve the effective factoring opt-in for a given invoice. The per-row
+// flag wins when set (true / false); null falls back to the company-wide
+// toggle in company_settings.
+function effectiveApplyFactoring(rowFlag: boolean | null | undefined, companyEnabled: boolean | null | undefined): boolean {
+  if (rowFlag === true)  return true
+  if (rowFlag === false) return false
+  return !!companyEnabled
+}
+
 // Compute subtotal / deduction rows / total in one place so the form,
 // the preview, and every share path agree on the numbers. Returns null
 // for each deduction when it shouldn't render.
 function computeTotals(amount: number, opts: {
+  applyFactoring?: boolean
   factoringPct?: number | null
   discountPct?:  number | null
   taxPct?:       number | null
@@ -88,7 +100,7 @@ function computeTotals(amount: number, opts: {
   total:     number
 } {
   const subtotal  = roundMoney(amount)
-  const fpct      = opts.factoringPct ?? null
+  const fpct      = opts.applyFactoring ? (opts.factoringPct ?? null) : null
   const dpct      = opts.discountPct  ?? null
   const tpct      = opts.taxPct       ?? null
   const factoring = fpct != null && fpct > 0 ? { pct: fpct, amount: roundMoney(subtotal * fpct / 100) } : null
@@ -166,7 +178,7 @@ export function Invoices({ driver }: { driver: Driver }) {
     queryKey: ['my-uninvoiced-loads', driver.id],
     queryFn: async () => {
       const { data, error } = await supabase.from('loads')
-        .select('id, load_number, origin_city, origin_state, dest_city, dest_state, miles, rate, brokers(id, name, email, phone), invoices(id)')
+        .select('id, load_number, origin_city, origin_state, dest_city, dest_state, miles, rate, apply_factoring, brokers(id, name, email, phone), invoices(id)')
         .eq('driver_id', driver.id)
         .eq('status', 'Delivered')
         .order('created_at', { ascending: false })
@@ -186,6 +198,34 @@ export function Invoices({ driver }: { driver: Driver }) {
         amount: load.rate,
         status: 'Draft' as InvoiceStatus,
         issued_date: new Date().toISOString().slice(0, 10),
+        apply_factoring: load.apply_factoring,
+      })
+      if (error) throw error
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['my-invoices', driver.id] })
+      qc.invalidateQueries({ queryKey: ['my-uninvoiced-loads', driver.id] })
+    },
+    onError: (e: Error) => alert(e.message),
+  })
+
+  // "Mark as invoiced" — the driver invoices through their factoring
+  // company, so we just need a stub row so the load drops off
+  // "Ready to Invoice" and stays in Past Invoices as a record. Status
+  // lands at Sent (waiting for factor payment); notes flag the origin
+  // so it's obvious why no PDF exists.
+  const markInvoicedExternally = useMutation({
+    mutationFn: async (load: DeliveredLoad) => {
+      const invoice_number = await nextInvoiceNumber()
+      const { error } = await supabase.from('invoices').insert({
+        invoice_number,
+        load_id: load.id,
+        broker_id: load.brokers?.id ?? null,
+        amount: load.rate,
+        status: 'Sent' as InvoiceStatus,
+        issued_date: new Date().toISOString().slice(0, 10),
+        apply_factoring: true,
+        notes: 'Invoiced via factoring company',
       })
       if (error) throw error
     },
@@ -258,26 +298,39 @@ export function Invoices({ driver }: { driver: Driver }) {
           <h2 className="text-base font-semibold text-gray-900 mb-2 px-1">Ready to Invoice</h2>
           {uninvoicedLoads.length > 0 ? (
             <ul className="space-y-2">
-              {uninvoicedLoads.map(l => (
-                <li key={l.id} className="bg-white rounded-2xl p-4 flex items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="text-base font-semibold text-gray-900 truncate">
-                      {[l.origin_city, l.dest_city].filter(Boolean).join(' → ') || l.load_number || '—'}
-                    </p>
-                    <p className="text-xs text-gray-500 mt-0.5">
-                      {l.brokers?.name ?? 'No broker'} · Load visits {fmtMoney(l.rate)}
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => createInvoice.mutate(l)}
-                    disabled={createInvoice.isPending}
-                    className="py-2 px-4 rounded-lg text-sm font-semibold text-white disabled:opacity-50 cursor-pointer flex-shrink-0"
-                    style={{ background: 'var(--color-brand-500)' }}
-                  >
-                    Create
-                  </button>
-                </li>
-              ))}
+              {uninvoicedLoads.map(l => {
+                const busy = createInvoice.isPending || markInvoicedExternally.isPending
+                return (
+                  <li key={l.id} className="bg-white rounded-2xl p-4 flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-base font-semibold text-gray-900 truncate">
+                        {[l.origin_city, l.dest_city].filter(Boolean).join(' → ') || l.load_number || '—'}
+                      </p>
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        {l.brokers?.name ?? 'No broker'} · Load visits {fmtMoney(l.rate)}
+                      </p>
+                    </div>
+                    <div className="flex flex-col items-stretch gap-1.5 flex-shrink-0">
+                      <button
+                        onClick={() => createInvoice.mutate(l)}
+                        disabled={busy}
+                        className="py-2 px-4 rounded-lg text-sm font-semibold text-white disabled:opacity-50 cursor-pointer"
+                        style={{ background: 'var(--color-brand-500)' }}
+                      >
+                        Create
+                      </button>
+                      <button
+                        onClick={() => markInvoicedExternally.mutate(l)}
+                        disabled={busy}
+                        className="py-1.5 px-3 rounded-lg text-xs font-medium text-gray-600 border border-gray-200 bg-white active:bg-gray-50 disabled:opacity-50 cursor-pointer"
+                        title="Use when the factoring company generates the invoice"
+                      >
+                        Mark invoiced
+                      </button>
+                    </div>
+                  </li>
+                )
+              })}
             </ul>
           ) : (
             <EmptyInvoicesCard message="No loads ready to invoice." />
@@ -457,9 +510,10 @@ function InvoiceSheet({ invoice, driverId, onClose }: {
       // all land in the PDF breakdown consistently with the form.
       ...(() => {
         const t = computeTotals(invoice.amount ?? 0, {
-          factoringPct: settings?.factoring_enabled ? settings.factoring_pct : null,
-          discountPct:  invoice.discount_pct,
-          taxPct:       invoice.tax_pct,
+          applyFactoring: effectiveApplyFactoring(invoice.apply_factoring, settings?.factoring_enabled),
+          factoringPct:   settings?.factoring_pct,
+          discountPct:    invoice.discount_pct,
+          taxPct:         invoice.tax_pct,
         })
         return {
           subtotal:    t.subtotal,
@@ -757,6 +811,7 @@ export function InvoiceFormSheet({ driverId, editing, onClose }: {
     customer_id:    editing?.customer_id ?? '',
     discount_pct:   editing?.discount_pct ?? null as number | null,
     tax_pct:        editing?.tax_pct      ?? null as number | null,
+    apply_factoring: editing?.apply_factoring ?? null as boolean | null,
   })
   const [error, setError] = useState<string | null>(null)
   const set = <K extends keyof typeof form>(k: K, v: typeof form[K]) =>
@@ -834,7 +889,7 @@ export function InvoiceFormSheet({ driverId, editing, onClose }: {
     queryKey: ['driver-loads-for-invoice', driverId],
     queryFn: async () => {
       const { data, error } = await supabase.from('loads')
-        .select('id, load_number, origin_city, dest_city, rate, status')
+        .select('id, load_number, origin_city, dest_city, rate, status, apply_factoring')
         .eq('driver_id', driverId)
         .order('created_at', { ascending: false })
         .limit(50)
@@ -843,6 +898,7 @@ export function InvoiceFormSheet({ driverId, editing, onClose }: {
         id: string; load_number: string | null
         origin_city: string | null; dest_city: string | null
         rate: number | null; status: string
+        apply_factoring: boolean | null
       }>
     },
   })
@@ -968,9 +1024,10 @@ export function InvoiceFormSheet({ driverId, editing, onClose }: {
         lineItems: [{ description: routeDesc, miles: lo?.miles ?? null, amount }],
         ...(() => {
           const t = computeTotals(amount, {
-            factoringPct: company?.factoring_enabled ? company.factoring_pct : null,
-            discountPct:  form.discount_pct,
-            taxPct:       form.tax_pct,
+            applyFactoring: effectiveApplyFactoring(form.apply_factoring, company?.factoring_enabled),
+            factoringPct:   company?.factoring_pct,
+            discountPct:    form.discount_pct,
+            taxPct:         form.tax_pct,
           })
           return {
             subtotal:    t.subtotal,
@@ -1011,6 +1068,7 @@ export function InvoiceFormSheet({ driverId, editing, onClose }: {
         customer_id:    form.customer_id || null,
         discount_pct:   form.discount_pct != null && Number.isFinite(form.discount_pct) && form.discount_pct > 0 ? form.discount_pct : null,
         tax_pct:        form.tax_pct      != null && Number.isFinite(form.tax_pct)      && form.tax_pct      > 0 ? form.tax_pct      : null,
+        apply_factoring: form.apply_factoring,
       }
       const { error } = isEdit && editing
         ? await supabase.from('invoices').update(payload).eq('id', editing.id)
@@ -1026,11 +1084,15 @@ export function InvoiceFormSheet({ driverId, editing, onClose }: {
   })
 
   // When a load is picked, prefill amount from the load's rate if the user
-  // hasn't already entered one.
+  // hasn't already entered one, and inherit the load's per-row factoring
+  // opt-in so a rate-con that was ticked for factoring carries through.
   function pickLoad(loadId: string) {
     set('load_id', loadId)
     const l = driverLoads.find(x => x.id === loadId)
     if (l && !form.amount && l.rate != null) set('amount', String(l.rate))
+    if (l && form.apply_factoring == null && l.apply_factoring != null) {
+      set('apply_factoring', l.apply_factoring)
+    }
   }
 
   return (
@@ -1199,6 +1261,35 @@ export function InvoiceFormSheet({ driverId, editing, onClose }: {
               className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-base" />
           </div>
 
+          {/* Per-invoice factoring opt-in. The rate still lives in
+              Settings (company_settings.factoring_pct); this checkbox
+              only decides whether the deduction shows on THIS invoice,
+              so drivers can mix factored and direct-bill loads. */}
+          {(() => {
+            const pct = companyRow?.factoring_pct
+            const defaultOn = !!companyRow?.factoring_enabled
+            const on = effectiveApplyFactoring(form.apply_factoring, defaultOn)
+            const rateLabel = pct != null && Number.isFinite(pct) && pct > 0 ? `${pct}%` : '—'
+            return (
+              <div className="rounded-xl bg-gray-50 border border-gray-200 p-3">
+                <label className="flex items-center justify-between cursor-pointer">
+                  <span>
+                    <span className="block text-sm font-medium text-gray-900">Apply factoring fee ({rateLabel})</span>
+                    <span className="block text-xs text-gray-500 mt-0.5">
+                      {defaultOn ? 'Company default: on. Uncheck to skip on this invoice.' : 'Company default: off. Check to apply on this invoice.'}
+                    </span>
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={on}
+                    onChange={e => set('apply_factoring', e.target.checked)}
+                    className="w-5 h-5 cursor-pointer accent-[color:var(--color-brand-500)]"
+                  />
+                </label>
+              </div>
+            )
+          })()}
+
           {/* Discount % and Tax % — both per-invoice, both live-calculate
               the total shown below. */}
           <div className="grid grid-cols-2 gap-3">
@@ -1236,9 +1327,10 @@ export function InvoiceFormSheet({ driverId, editing, onClose }: {
             const amt = form.amount ? Number(form.amount) : 0
             if (!Number.isFinite(amt) || amt <= 0) return null
             const t = computeTotals(amt, {
-              factoringPct: companyRow?.factoring_enabled ? companyRow.factoring_pct : null,
-              discountPct:  form.discount_pct,
-              taxPct:       form.tax_pct,
+              applyFactoring: effectiveApplyFactoring(form.apply_factoring, companyRow?.factoring_enabled),
+              factoringPct:   companyRow?.factoring_pct,
+              discountPct:    form.discount_pct,
+              taxPct:         form.tax_pct,
             })
             if (!t.factoring && !t.discount && !t.tax) return null
             return (
