@@ -65,25 +65,26 @@ Rules:
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: CORS_HEADERS })
-  if (req.method !== 'POST') {
-    return new Response('Method not allowed', { status: 405, headers: CORS_HEADERS })
-  }
+  // Always return 200 with { error } on failures — the Supabase functions
+  // client throws on any non-2xx and swallows the body, so the UI can't
+  // surface the real reason otherwise.
+  if (req.method !== 'POST') return json({ error: 'POST required' })
 
   if (!ANTHROPIC_API_KEY) {
-    return json({ error: 'ANTHROPIC_API_KEY not configured on the edge function' }, 500)
+    return json({ error: 'ANTHROPIC_API_KEY not configured on the edge function' })
   }
 
   let body: { images?: string[]; pdf?: string; mime_type?: string }
   try {
     body = await req.json()
   } catch {
-    return json({ error: 'invalid JSON body' }, 400)
+    return json({ error: 'invalid JSON body' })
   }
 
   const images = Array.isArray(body.images) ? body.images.slice(0, MAX_PAGES) : []
   const pdf = typeof body.pdf === 'string' ? body.pdf : ''
   if (images.length === 0 && !pdf) {
-    return json({ error: 'images[] or pdf required (base64 content)' }, 400)
+    return json({ error: 'images[] or pdf required (base64 content)' })
   }
   const mime = body.mime_type || 'image/jpeg'
 
@@ -134,12 +135,12 @@ Deno.serve(async (req) => {
 
     const textBlock = response.content.find(b => b.type === 'text')
     if (!textBlock || textBlock.type !== 'text') {
-      return json({ error: 'Claude returned no text block' }, 502)
+      return json({ error: 'Claude returned no text block' })
     }
 
     const parsed = extractJson(textBlock.text)
     if (!parsed) {
-      return json({ error: 'Claude response was not valid JSON', raw: textBlock.text }, 502)
+      return json({ error: 'Claude response was not valid JSON', raw: textBlock.text })
     }
 
     return json({
@@ -152,17 +153,15 @@ Deno.serve(async (req) => {
       },
     })
   } catch (e) {
-    // Log the full error server-side; return a sanitized message to the
-    // client so we don't leak key/metadata details.
     console.error('parse-rate-con error:', e)
     const msg = e instanceof Error ? e.message : 'parse failed'
-    return json({ error: msg }, 502)
+    return json({ error: msg })
   }
 })
 
-function json(body: unknown, status = 200) {
+function json(body: unknown) {
   return new Response(JSON.stringify(body), {
-    status,
+    status: 200,
     headers: { 'content-type': 'application/json', ...CORS_HEADERS },
   })
 }
