@@ -136,6 +136,7 @@ export function Home({ driver, onGoToLoads, onOpenDriverMode }: {
   })
 
   const [freightPickerOpen, setFreightPickerOpen] = useState(false)
+  const [carrierLookupOpen, setCarrierLookupOpen] = useState(false)
 
   const captureFreight = useMutation({
     mutationFn: async (target: { id: string; loadRef: string }) => {
@@ -270,6 +271,17 @@ export function Home({ driver, onGoToLoads, onOpenDriverMode }: {
               </span>
             </span>
           </button>
+          <button
+            type="button"
+            onClick={() => setCarrierLookupOpen(true)}
+            className="bg-white rounded-2xl p-4 text-left active:bg-gray-50 cursor-pointer flex items-center gap-3 col-span-2"
+          >
+            <span className="w-11 h-11 rounded-xl bg-green-100 text-green-700 flex items-center justify-center text-xl" aria-hidden>🔎</span>
+            <span>
+              <span className="block text-sm font-semibold text-gray-900">Verify carrier / broker</span>
+              <span className="block text-[11px] text-gray-500">FMCSA lookup by MC# or DOT#</span>
+            </span>
+          </button>
         </div>
       </div>
 
@@ -283,6 +295,9 @@ export function Home({ driver, onGoToLoads, onOpenDriverMode }: {
         loadId={activeLoad?.id ?? null}
         onClose={() => setFuelSheetOpen(false)}
       />
+    )}
+    {carrierLookupOpen && (
+      <CarrierLookupSheet onClose={() => setCarrierLookupOpen(false)} />
     )}
     {freightPickerOpen && (
       <FreightLoadPicker
@@ -527,3 +542,135 @@ function AddFuelSheet({ loadId, onClose }: { loadId: string | null; onClose: () 
     </div>
   )
 }
+
+// ── Carrier / broker FMCSA lookup sheet ──────────────────────────────────────
+
+function CarrierLookupSheet({ onClose }: { onClose: () => void }) {
+  const [query, setQuery] = useState('')
+  const [mode, setMode] = useState<'mc' | 'dot'>('mc')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [snap, setSnap] = useState<import('../lib/ai').BrokerSnapshot | null>(null)
+
+  async function runLookup() {
+    const digits = query.replace(/\D/g, '')
+    if (!digits) { setError('Enter an MC# or DOT#'); return }
+    setBusy(true); setError(null); setSnap(null)
+    try {
+      const { checkBroker } = await import('../lib/ai')
+      const s = await checkBroker(mode === 'mc' ? { mc: digits } : { dot: digits })
+      setSnap(s)
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end" role="dialog" aria-modal="true">
+      <div className="absolute inset-0 bg-black/30" onClick={onClose} />
+      <div
+        className="relative bg-white w-full rounded-t-3xl p-6 max-h-[88vh] overflow-y-auto"
+        style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 16px) + 16px)' }}
+      >
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-bold text-gray-900">Verify carrier / broker</h2>
+          <button onClick={onClose} className="text-gray-400 text-lg cursor-pointer">✕</button>
+        </div>
+
+        <div className="grid grid-cols-2 gap-1 bg-gray-100 rounded-xl p-1 mb-3">
+          {(['mc', 'dot'] as const).map(k => {
+            const on = mode === k
+            return (
+              <button key={k} onClick={() => setMode(k)}
+                className="py-2 rounded-lg text-sm font-semibold cursor-pointer"
+                style={on ? { background: 'var(--color-brand-500)', color: 'white' } : { color: '#6b7280' }}>
+                {k === 'mc' ? 'MC number' : 'DOT number'}
+              </button>
+            )
+          })}
+        </div>
+
+        <div className="flex gap-2">
+          <input
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') runLookup() }}
+            placeholder={mode === 'mc' ? 'e.g. 090949' : 'e.g. 3126831'}
+            inputMode="numeric"
+            className="flex-1 px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-base"
+          />
+          <button type="button" onClick={runLookup} disabled={busy || !query.trim()}
+            className="px-5 py-3 rounded-xl text-white text-base font-semibold disabled:opacity-60 cursor-pointer"
+            style={{ background: 'var(--color-brand-500)' }}>
+            {busy ? '…' : 'Verify'}
+          </button>
+        </div>
+
+        {error && <p className="mt-3 text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
+
+        {snap && <div className="mt-4"><CarrierLookupCard snap={snap} /></div>}
+      </div>
+    </div>
+  )
+}
+
+function CarrierLookupCard({ snap }: { snap: import('../lib/ai').BrokerSnapshot }) {
+  const hasFatal   = snap.risk_flags.some(f => f === 'out_of_service' || f === 'not_authorized')
+  const hasWarning = !hasFatal && snap.risk_flags.length > 0
+  const tone = hasFatal
+    ? { bg: 'rgb(254, 226, 226)', border: '#fca5a5', text: '#991b1b' }
+    : hasWarning
+      ? { bg: 'rgb(254, 243, 199)', border: '#fcd34d', text: '#92400e' }
+      : { bg: 'rgb(220, 252, 231)', border: '#86efac', text: '#14532d' }
+  const FLAG_LABEL: Record<string, string> = {
+    out_of_service:    'Out of service',
+    not_authorized:    'Not authorized',
+    high_vehicle_oos:  'High vehicle OOS rate',
+    high_driver_oos:   'High driver OOS rate',
+    no_name_on_record: 'Missing legal name',
+  }
+  return (
+    <div className="rounded-xl p-4 text-sm"
+      style={{ background: tone.bg, border: `1px solid ${tone.border}`, color: tone.text }}>
+      <div className="flex items-center justify-between mb-2">
+        <span className="font-semibold text-base">{snap.legal_name || snap.dba_name || 'Unnamed carrier'}</span>
+        <span className="font-mono text-xs opacity-80">
+          {snap.mc_number ? `MC# ${snap.mc_number}` : snap.dot_number ? `DOT# ${snap.dot_number}` : ''}
+        </span>
+      </div>
+      {snap.dba_name && snap.legal_name && snap.dba_name !== snap.legal_name && (
+        <p className="mb-0.5 text-xs"><span className="opacity-70">DBA:</span> {snap.dba_name}</p>
+      )}
+      {snap.operating_status && <p className="mb-0.5 text-xs"><span className="opacity-70">Authority:</span> {snap.operating_status}</p>}
+      {snap.entity_type && <p className="mb-0.5 text-xs"><span className="opacity-70">Entity:</span> {snap.entity_type}</p>}
+      {snap.physical_address && <p className="mb-0.5 text-xs"><span className="opacity-70">Address:</span> {snap.physical_address}</p>}
+      {snap.phone && <p className="mb-0.5 text-xs"><span className="opacity-70">Phone:</span> {snap.phone}</p>}
+      {(snap.power_units != null || snap.drivers != null) && (
+        <p className="mb-0.5 text-xs">
+          <span className="opacity-70">Fleet:</span> {snap.power_units ?? '—'} units · {snap.drivers ?? '—'} drivers
+        </p>
+      )}
+      {(snap.oos_rate_vehicle != null || snap.oos_rate_driver != null) && (
+        <p className="mb-0.5 text-xs">
+          <span className="opacity-70">OOS:</span>{' '}
+          {snap.oos_rate_vehicle != null ? `vehicle ${snap.oos_rate_vehicle}%` : ''}
+          {snap.oos_rate_vehicle != null && snap.oos_rate_driver != null ? ' · ' : ''}
+          {snap.oos_rate_driver != null ? `driver ${snap.oos_rate_driver}%` : ''}
+        </p>
+      )}
+      {snap.risk_flags.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-1">
+          {snap.risk_flags.map(f => (
+            <span key={f} className="px-2 py-0.5 rounded-full text-[10px] font-semibold"
+              style={{ background: tone.text, color: tone.bg }}>
+              {FLAG_LABEL[f] ?? f}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+

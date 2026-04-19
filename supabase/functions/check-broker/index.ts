@@ -55,33 +55,44 @@ Deno.serve(async (req) => {
     return json({ error: 'mc_number or dot_number required' }, 400)
   }
 
-  // SAFER carrier snapshot. Either MC or USDOT works — the same page
-  // format is returned. MC is what brokers typically quote.
-  const queryType = mc ? 'queryCarrierSnapshot' : 'queryCarrierSnapshot'
-  const param     = mc ? 'MC_MX' : 'USDOT'
-  const value     = mc || dot
-  const url = `https://safer.fmcsa.dot.gov/query.asp?searchtype=ANY&query_type=${queryType}&query_param=${param}&query_string=${value}`
+  // SAFER carrier snapshot. The form that drives this page uses POST, not
+  // GET — a GET returns a redirect/landing page, not the snapshot. Either
+  // MC or USDOT works as the query_param.
+  const param = mc ? 'MC_MX' : 'USDOT'
+  const value = mc || dot
+  const form = new URLSearchParams({
+    searchtype: 'ANY',
+    query_type: 'queryCarrierSnapshot',
+    query_param: param,
+    query_string: value,
+  })
 
   try {
-    const res = await fetch(url, {
+    const res = await fetch('https://safer.fmcsa.dot.gov/query.asp', {
+      method: 'POST',
       headers: {
-        // SAFER sometimes blocks empty UAs. A realistic browser string keeps
-        // them happy without pretending to be anything sophisticated.
-        'User-Agent': 'Mozilla/5.0 (compatible; DrivenTMS/1.0)',
-        'Accept':     'text/html',
+        'User-Agent':    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15',
+        'Accept':        'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Content-Type':  'application/x-www-form-urlencoded',
+        'Referer':       'https://safer.fmcsa.dot.gov/CompanySnapshot.aspx',
       },
+      body: form.toString(),
     })
-    if (!res.ok) return json({ error: `SAFER returned ${res.status}` }, 502)
+    if (!res.ok) {
+      return json({ error: `SAFER returned ${res.status}` })
+    }
     const html = await res.text()
 
-    // The snapshot page has a fixed set of labeled cells. If the lookup
-    // missed, SAFER returns a "Record Not Found" marker — surface that
-    // cleanly instead of handing back an empty object.
+    // SAFER shows "Record Not Found" or "Record Inactive" when the
+    // MC/DOT doesn't resolve to a live carrier.
     if (/Record Not Found/i.test(html)) {
-      return json({ error: 'No FMCSA record for that MC/DOT number' }, 404)
+      return json({ error: 'No FMCSA record for that MC/DOT number' })
     }
-    if (/Record Inactive/i.test(html) && !/Legal Name/i.test(html)) {
-      return json({ error: 'FMCSA record is inactive' }, 404)
+    // If we didn't get the snapshot markup at all, hand back a tiny slice
+    // of the response so the client can see what SAFER actually sent.
+    if (!/Legal Name/i.test(html)) {
+      const preview = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200)
+      return json({ error: `SAFER returned an unexpected page: ${preview || '(empty)'}` })
     }
 
     const snap = parseSnapshot(html)
@@ -92,10 +103,14 @@ Deno.serve(async (req) => {
   } catch (e) {
     console.error('check-broker error:', e)
     const msg = e instanceof Error ? e.message : 'lookup failed'
-    return json({ error: msg }, 502)
+    return json({ error: msg })
   }
 })
 
+// Always respond 200 with an { error } body instead of 4xx/5xx — the
+// Supabase client throws on non-2xx and swallows the body, so errors the
+// UI needs to show (e.g. "No FMCSA record") never reach it. Status is
+// only overridden for true HTTP errors.
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
