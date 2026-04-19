@@ -340,9 +340,11 @@ function parseNameResults(html: string): NameCandidate[] {
   let m: RegExpExecArray | null
   while ((m = anchorRe.exec(html)) !== null) {
     const href = m[1].replace(/&amp;/g, '&')
-    // The DOT # sits in the LAST query_string= param (the first may be the
-    // echoed "original_query_string" with the user's search term).
-    const dotMatch = href.match(/[?&]query_string=(\d+)(?!.*query_string=)/)
+    // SAFER's URLs look like `...&query_param=USDOT&...&query_string=NNNN
+    // &original_query_string=XXXX`. We want the numeric one — "&query_string="
+    // matches the first form but NOT "&original_query_string=" because the
+    // character before "original" is `l`, not `?` or `&`.
+    const dotMatch = href.match(/[?&]query_string=(\d+)/)
     if (!dotMatch) continue
     const dot = dotMatch[1]
     if (seen.has(dot)) continue
