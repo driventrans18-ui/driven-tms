@@ -35,6 +35,8 @@ interface Invoice {
   status: InvoiceStatus
   notes: string | null
   description: string | null
+  discount_pct: number | null
+  tax_pct: number | null
   last_viewed_at: string | null
   view_count: number | null
   created_at: string
@@ -52,18 +54,48 @@ interface Invoice {
 }
 
 interface CompanySettings {
-  company_name:   string | null
-  logo_path:      string | null
-  factoring_email:string | null
-  address:        string | null
-  city:           string | null
-  state:          string | null
-  zip:            string | null
-  phone:          string | null
-  email:          string | null
-  mc_number:      string | null
-  dot_number:     string | null
-  ein:            string | null
+  company_name:      string | null
+  logo_path:         string | null
+  factoring_email:   string | null
+  address:           string | null
+  city:              string | null
+  state:             string | null
+  zip:               string | null
+  phone:             string | null
+  email:             string | null
+  mc_number:         string | null
+  dot_number:        string | null
+  ein:               string | null
+  factoring_enabled: boolean | null
+  factoring_pct:     number | null
+}
+
+// Round currency to 2 decimals to dodge floating-point garbage like 71.99999.
+function roundMoney(n: number) { return Math.round(n * 100) / 100 }
+
+// Compute subtotal / deduction rows / total in one place so the form,
+// the preview, and every share path agree on the numbers. Returns null
+// for each deduction when it shouldn't render.
+function computeTotals(amount: number, opts: {
+  factoringPct?: number | null
+  discountPct?:  number | null
+  taxPct?:       number | null
+}): {
+  subtotal:  number
+  factoring: { pct: number; amount: number } | null
+  discount:  { pct: number; amount: number } | null
+  tax:       { pct: number; amount: number } | null
+  total:     number
+} {
+  const subtotal  = roundMoney(amount)
+  const fpct      = opts.factoringPct ?? null
+  const dpct      = opts.discountPct  ?? null
+  const tpct      = opts.taxPct       ?? null
+  const factoring = fpct != null && fpct > 0 ? { pct: fpct, amount: roundMoney(subtotal * fpct / 100) } : null
+  const discount  = dpct != null && dpct > 0 ? { pct: dpct, amount: roundMoney(subtotal * dpct / 100) } : null
+  const tax       = tpct != null && tpct > 0 ? { pct: tpct, amount: roundMoney(subtotal * tpct / 100) } : null
+  const total     = roundMoney(subtotal - (factoring?.amount ?? 0) - (discount?.amount ?? 0) + (tax?.amount ?? 0))
+  return { subtotal, factoring, discount, tax, total }
 }
 
 function fmtMoney(n: number | null | undefined) {
@@ -319,7 +351,7 @@ function InvoiceSheet({ invoice, driverId, onClose }: {
     queryKey: ['company-settings'],
     queryFn: async () => {
       const { data, error } = await supabase.from('company_settings')
-        .select('company_name, logo_path, factoring_email, address, city, state, zip, phone, email, mc_number, dot_number, ein').limit(1).maybeSingle()
+        .select('company_name, logo_path, factoring_email, address, city, state, zip, phone, email, mc_number, dot_number, ein, factoring_enabled, factoring_pct').limit(1).maybeSingle()
       if (error) throw error
       return data as CompanySettings | null
     },
@@ -420,7 +452,23 @@ function InvoiceSheet({ invoice, driverId, onClose }: {
         miles:       invoice.loads?.miles ?? null,
         amount:      invoice.amount ?? 0,
       }],
-      totalAmount: invoice.amount ?? 0,
+      // Run the amount through the shared totals helper so factoring
+      // (company-wide), discount (per-invoice), and tax (per-invoice)
+      // all land in the PDF breakdown consistently with the form.
+      ...(() => {
+        const t = computeTotals(invoice.amount ?? 0, {
+          factoringPct: settings?.factoring_enabled ? settings.factoring_pct : null,
+          discountPct:  invoice.discount_pct,
+          taxPct:       invoice.tax_pct,
+        })
+        return {
+          subtotal:    t.subtotal,
+          factoring:   t.factoring,
+          discount:    t.discount,
+          tax:         t.tax,
+          totalAmount: t.total,
+        }
+      })(),
     }
     const safeName = invoiceLabel.replace(/[^A-Za-z0-9._-]/g, '_')
     return { data, fileName: `Invoice-${safeName}.pdf` }
@@ -707,6 +755,8 @@ export function InvoiceFormSheet({ driverId, editing, onClose }: {
     load_id:        editing?.load_id     ?? '',
     broker_id:      editing?.broker_id   ?? '',
     customer_id:    editing?.customer_id ?? '',
+    discount_pct:   editing?.discount_pct ?? null as number | null,
+    tax_pct:        editing?.tax_pct      ?? null as number | null,
   })
   const [error, setError] = useState<string | null>(null)
   const set = <K extends keyof typeof form>(k: K, v: typeof form[K]) =>
@@ -797,6 +847,17 @@ export function InvoiceFormSheet({ driverId, editing, onClose }: {
     },
   })
 
+  // Pulled separately here (in addition to the parent list fetch) so the
+  // live totals breakdown and the PDF preview agree on the factoring rate.
+  const { data: companyRow } = useQuery({
+    queryKey: ['company-settings-for-invoice'],
+    queryFn: async () => {
+      const { data } = await supabase.from('company_settings')
+        .select('factoring_enabled, factoring_pct').limit(1).maybeSingle()
+      return data as { factoring_enabled: boolean | null; factoring_pct: number | null } | null
+    },
+  })
+
   const createBroker = useMutation({
     mutationFn: async () => {
       const name = qa.name.trim()
@@ -856,7 +917,7 @@ export function InvoiceFormSheet({ driverId, editing, onClose }: {
           ? supabase.from('loads').select('load_number, origin_city, origin_state, dest_city, dest_state, miles').eq('id', form.load_id).maybeSingle()
           : Promise.resolve({ data: null, error: null }),
         supabase.from('company_settings')
-          .select('company_name, logo_path, address, city, state, zip, phone, email, mc_number, dot_number, ein')
+          .select('company_name, logo_path, address, city, state, zip, phone, email, mc_number, dot_number, ein, factoring_enabled, factoring_pct')
           .limit(1).maybeSingle(),
       ])
 
@@ -905,7 +966,20 @@ export function InvoiceFormSheet({ driverId, editing, onClose }: {
         },
         billTo: bt ? { name: bt.name, email: bt.email ?? null, phone: bt.phone ?? null, address: (bt as { address?: string | null }).address ?? null, mc_number: bt.mc_number ?? null, dot_number: bt.dot_number ?? null } : null,
         lineItems: [{ description: routeDesc, miles: lo?.miles ?? null, amount }],
-        totalAmount: amount,
+        ...(() => {
+          const t = computeTotals(amount, {
+            factoringPct: company?.factoring_enabled ? company.factoring_pct : null,
+            discountPct:  form.discount_pct,
+            taxPct:       form.tax_pct,
+          })
+          return {
+            subtotal:    t.subtotal,
+            factoring:   t.factoring,
+            discount:    t.discount,
+            tax:         t.tax,
+            totalAmount: t.total,
+          }
+        })(),
       })
       const safeName = invoiceLabel.replace(/[^A-Za-z0-9._-]/g, '_')
       const url = URL.createObjectURL(blob)
@@ -935,6 +1009,8 @@ export function InvoiceFormSheet({ driverId, editing, onClose }: {
         load_id:        form.load_id     || null,
         broker_id:      form.broker_id   || null,
         customer_id:    form.customer_id || null,
+        discount_pct:   form.discount_pct != null && Number.isFinite(form.discount_pct) && form.discount_pct > 0 ? form.discount_pct : null,
+        tax_pct:        form.tax_pct      != null && Number.isFinite(form.tax_pct)      && form.tax_pct      > 0 ? form.tax_pct      : null,
       }
       const { error } = isEdit && editing
         ? await supabase.from('invoices').update(payload).eq('id', editing.id)
@@ -1122,6 +1198,62 @@ export function InvoiceFormSheet({ driverId, editing, onClose }: {
               rows={2}
               className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-base" />
           </div>
+
+          {/* Discount % and Tax % — both per-invoice, both live-calculate
+              the total shown below. */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Discount (%)</label>
+              <input
+                type="number" inputMode="decimal" step="0.01"
+                value={form.discount_pct ?? ''}
+                onChange={e => {
+                  const v = e.target.value
+                  set('discount_pct', v === '' ? null : Number(v))
+                }}
+                placeholder="0"
+                className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-base"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Tax (%)</label>
+              <input
+                type="number" inputMode="decimal" step="0.01"
+                value={form.tax_pct ?? ''}
+                onChange={e => {
+                  const v = e.target.value
+                  set('tax_pct', v === '' ? null : Number(v))
+                }}
+                placeholder="0"
+                className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-base"
+              />
+            </div>
+          </div>
+
+          {/* Live breakdown — only shown when at least one row has any
+              effect, so a bare invoice stays uncluttered. */}
+          {(() => {
+            const amt = form.amount ? Number(form.amount) : 0
+            if (!Number.isFinite(amt) || amt <= 0) return null
+            const t = computeTotals(amt, {
+              factoringPct: companyRow?.factoring_enabled ? companyRow.factoring_pct : null,
+              discountPct:  form.discount_pct,
+              taxPct:       form.tax_pct,
+            })
+            if (!t.factoring && !t.discount && !t.tax) return null
+            return (
+              <div className="rounded-xl bg-gray-50 border border-gray-200 p-3 text-sm">
+                <Row k="Subtotal" v={fmtMoney(t.subtotal)} />
+                {t.factoring && <Row k={`Factoring (${t.factoring.pct}%)`} v={`-${fmtMoney(t.factoring.amount)}`} />}
+                {t.discount  && <Row k={`Discount (${t.discount.pct}%)`}   v={`-${fmtMoney(t.discount.amount)}`} />}
+                {t.tax       && <Row k={`Tax (${t.tax.pct}%)`}             v={fmtMoney(t.tax.amount)} />}
+                <div className="mt-2 pt-2 border-t border-gray-200 flex items-center justify-between">
+                  <span className="font-semibold text-gray-900">Total</span>
+                  <span className="font-bold text-gray-900">{fmtMoney(t.total)}</span>
+                </div>
+              </div>
+            )
+          })()}
 
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Notes</label>

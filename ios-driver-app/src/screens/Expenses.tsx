@@ -53,10 +53,35 @@ function todayISO() {
   return new Date().toISOString().slice(0, 10)
 }
 
+type Period = 'week' | 'month' | 'year' | 'all'
+
+// Inclusive lower bound (YYYY-MM-DD) for the chosen rolling window, or
+// null when the user wants every row. Week is Monday-anchored to match
+// how the Home summary tile counts the same data.
+function periodStart(p: Period): string | null {
+  if (p === 'all') return null
+  const d = new Date()
+  d.setHours(0, 0, 0, 0)
+  if (p === 'week') {
+    const day = d.getDay()
+    d.setDate(d.getDate() + (day === 0 ? -6 : 1 - day))
+  } else if (p === 'month') {
+    d.setDate(1)
+  } else {
+    d.setMonth(0, 1)
+  }
+  return d.toISOString().slice(0, 10)
+}
+
+const PERIOD_LABEL: Record<Period, string> = {
+  week: 'This Week', month: 'This Month', year: 'This Year', all: 'All Time',
+}
+
 export function Expenses() {
   const qc = useQueryClient()
-  const [catFilter, setCatFilter] = useState<Category | 'All'>('All')
-  const [open, setOpen] = useState<{ editing: Expense | null } | null>(null)
+  const [catFilter, setCatFilter]       = useState<Category | 'All'>('All')
+  const [period,    setPeriod]          = useState<Period>('month')
+  const [open,      setOpen]            = useState<{ editing: Expense | null } | null>(null)
 
   const { data: expenses = [], isLoading } = useQuery({
     queryKey: ['driver-expenses'],
@@ -80,7 +105,12 @@ export function Expenses() {
     onError: (e: Error) => alert(e.message),
   })
 
-  const filtered = catFilter === 'All' ? expenses : expenses.filter(e => e.category === catFilter)
+  const since = periodStart(period)
+  const filtered = expenses.filter(e => {
+    if (catFilter !== 'All' && e.category !== catFilter) return false
+    if (since && (e.expense_date ?? '') < since) return false
+    return true
+  })
   const total = filtered.reduce((s, e) => s + (e.amount ?? 0), 0)
 
   return (
@@ -90,9 +120,26 @@ export function Expenses() {
         action={<PlusButton onClick={() => setOpen({ editing: null })} label="Add expense" />}
       />
 
-      {/* Total headline — matches the mockup: centered label + large value. */}
+      {/* Period selector — Week / Month / Year / All. Drives both the
+         total headline and the list below it. */}
+      <div className="grid grid-cols-4 gap-1 bg-gray-100 rounded-xl p-1">
+        {(['week', 'month', 'year', 'all'] as Period[]).map(p => {
+          const on = p === period
+          return (
+            <button key={p} onClick={() => setPeriod(p)}
+              className="py-2 rounded-lg text-sm font-semibold cursor-pointer transition-colors"
+              style={on ? { background: 'var(--color-surface-elevated)', color: 'var(--color-text-primary)' } : { color: '#6b7280' }}>
+              {p === 'week' ? 'Week' : p === 'month' ? 'Month' : p === 'year' ? 'Year' : 'All'}
+            </button>
+          )
+        })}
+      </div>
+
+      {/* Total headline — label reflects active period + category. */}
       <div className="bg-white rounded-2xl p-5 text-center">
-        <p className="text-sm text-gray-500">{catFilter === 'All' ? 'Total' : catFilter}</p>
+        <p className="text-sm text-gray-500">
+          {PERIOD_LABEL[period]}{catFilter === 'All' ? '' : ` · ${catFilter}`}
+        </p>
         <p className="text-4xl font-bold text-gray-900 mt-1">{fmtMoney(total)}</p>
       </div>
 
