@@ -15,22 +15,33 @@ const ACTIVE_STATUSES = ['Assigned', 'In Transit']
 type LoadStatus = 'Assigned' | 'In Transit' | 'Delivered'
 const QUICK_STATUSES: LoadStatus[] = ['Assigned', 'In Transit', 'Delivered']
 
-function startOfWeek(d = new Date()) {
-  const day = d.getDay()
-  const diff = day === 0 ? -6 : 1 - day
-  const monday = new Date(d)
-  monday.setHours(0, 0, 0, 0)
-  monday.setDate(d.getDate() + diff)
-  return monday
+type Period = 'week' | 'month' | 'year'
+
+// Inclusive lower bound (Date at 00:00) for the chosen rolling window.
+// Week is Monday-anchored to match the Expenses tab tile.
+function periodStart(p: Period): Date {
+  const d = new Date()
+  d.setHours(0, 0, 0, 0)
+  if (p === 'week') {
+    const day = d.getDay()
+    d.setDate(d.getDate() + (day === 0 ? -6 : 1 - day))
+  } else if (p === 'month') {
+    d.setDate(1)
+  } else {
+    d.setMonth(0, 1)
+  }
+  return d
 }
 
-// This-week summary — Gross / Net on top row, Expenses / $/mile on bottom.
-// No time-range toggle on Home: driver can drill into Expenses tab for detail.
+// Summary tile with a Week / Month / Year period selector. Totals Gross,
+// Net, Expenses, and $/mile for the selected rolling window so the driver
+// can eyeball trends without leaving Home.
 function Summary({ driverId }: { driverId: string }) {
+  const [period, setPeriod] = useState<Period>('week')
   const { data } = useQuery({
-    queryKey: ['driver-summary', driverId, 'week'],
+    queryKey: ['driver-summary', driverId, period],
     queryFn: async () => {
-      const since = startOfWeek().toISOString()
+      const since = periodStart(period).toISOString()
       const [loadsRes, expensesRes] = await Promise.all([
         supabase.from('loads')
           .select('rate, miles, deadhead_miles')
@@ -56,14 +67,28 @@ function Summary({ driverId }: { driverId: string }) {
   const fmtK = (n: number) => '$' + n.toLocaleString(undefined, { maximumFractionDigits: 0 })
 
   return (
-    <div className="bg-white rounded-2xl overflow-hidden">
-      <div className="grid grid-cols-2">
-        <StatCell label="Gross" value={fmtK(r.gross)} />
-        <StatCell label="Net" value={fmtK(r.net)} valueColor={r.net >= 0 ? '#16a34a' : '#dc2626'} />
+    <div className="space-y-2">
+      <div className="grid grid-cols-3 gap-1 bg-gray-100 rounded-xl p-1">
+        {(['week', 'month', 'year'] as Period[]).map(p => {
+          const on = p === period
+          return (
+            <button key={p} onClick={() => setPeriod(p)}
+              className="py-2 rounded-lg text-sm font-semibold cursor-pointer transition-colors"
+              style={on ? { background: 'var(--color-surface-elevated)', color: 'var(--color-text-primary)' } : { color: '#6b7280' }}>
+              {p === 'week' ? 'Week' : p === 'month' ? 'Month' : 'Year'}
+            </button>
+          )
+        })}
       </div>
-      <div className="grid grid-cols-2 border-t border-gray-100">
-        <StatCell label="Expenses" value={fmtK(r.expenses)} />
-        <StatCell label="$/mile" value={r.miles > 0 ? '$' + r.rpm.toFixed(2) : '—'} valueColor="var(--color-brand-500)" />
+      <div className="bg-white rounded-2xl overflow-hidden">
+        <div className="grid grid-cols-2">
+          <StatCell label="Gross" value={fmtK(r.gross)} />
+          <StatCell label="Net" value={fmtK(r.net)} valueColor={r.net >= 0 ? '#16a34a' : '#dc2626'} />
+        </div>
+        <div className="grid grid-cols-2 border-t border-gray-100">
+          <StatCell label="Expenses" value={fmtK(r.expenses)} />
+          <StatCell label="$/mile" value={r.miles > 0 ? '$' + r.rpm.toFixed(2) : '—'} valueColor="var(--color-brand-500)" />
+        </div>
       </div>
     </div>
   )
