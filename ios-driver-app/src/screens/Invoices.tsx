@@ -35,6 +35,8 @@ interface Invoice {
   status: InvoiceStatus
   notes: string | null
   description: string | null
+  last_viewed_at: string | null
+  view_count: number | null
   created_at: string
   loads: {
     id: string
@@ -45,8 +47,8 @@ interface Invoice {
     dest_state: string | null
     miles: number | null
   } | null
-  brokers: { id: string; name: string; email: string | null; phone: string | null } | null
-  customers: { id: string; name: string; email: string | null; phone: string | null } | null
+  brokers:   { id: string; name: string; email: string | null; phone: string | null; mc_number: string | null; dot_number: string | null } | null
+  customers: { id: string; name: string; email: string | null; phone: string | null; mc_number: string | null; dot_number: string | null } | null
 }
 
 interface CompanySettings {
@@ -118,7 +120,7 @@ export function Invoices({ driver }: { driver: Driver }) {
     queryKey: ['my-invoices', driver.id],
     queryFn: async () => {
       const { data, error } = await supabase.from('invoices')
-        .select('*, loads(id, load_number, origin_city, origin_state, dest_city, dest_state, miles, driver_id), brokers(id, name, email, phone), customers(id, name, email, phone)')
+        .select('*, loads(id, load_number, origin_city, origin_state, dest_city, dest_state, miles, driver_id), brokers(id, name, email, phone, mc_number, dot_number), customers(id, name, email, phone, mc_number, dot_number)')
         .or(`load_id.is.null,loads.driver_id.eq.${driver.id}`)
         .order('created_at', { ascending: false })
       if (error) throw error
@@ -310,7 +312,7 @@ function InvoiceSheet({ invoice, driverId, onClose }: {
   const qc = useQueryClient()
   const [logoUrl, setLogoUrl] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [busy, setBusy] = useState<'share' | 'preview' | null>(null)
+  const [busy, setBusy] = useState<'share' | 'preview' | 'email' | 'sms' | null>(null)
   const [preview, setPreview] = useState<{ url: string; fileName: string } | null>(null)
 
   const { data: settings } = useQuery({
@@ -407,9 +409,11 @@ function InvoiceSheet({ invoice, driverId, onClose }: {
         ein:        settings?.ein        ?? null,
       },
       billTo: billTo ? {
-        name:  billTo.name,
-        email: billTo.email,
-        phone: billTo.phone,
+        name:       billTo.name,
+        email:      billTo.email,
+        phone:      billTo.phone,
+        mc_number:  billTo.mc_number  ?? null,
+        dot_number: billTo.dot_number ?? null,
       } : null,
       lineItems: [{
         description: routeDesc,
@@ -437,17 +441,24 @@ function InvoiceSheet({ invoice, driverId, onClose }: {
     }
   }
 
-  // Archive the generated PDF + flip Draft→Sent so the driver has a history
-  // they can re-share. Upload failure is non-fatal — we still want the share
-  // sheet to open.
-  async function archiveAndFlip(blob: Blob, fileName: string) {
+  // Archive the generated PDF, flip Draft→Sent so the driver has a history
+  // they can re-share, and return a signed URL the caller can embed in
+  // mailto:/sms: links. Upload failure is non-fatal.
+  async function archiveAndFlip(blob: Blob, fileName: string): Promise<string | null> {
+    let signedUrl: string | null = null
     try {
       const path = `${invoice.id}/${Date.now()}-${fileName}`
       const { error: upErr } = await supabase.storage.from('invoice-pdfs').upload(path, blob, {
         contentType: 'application/pdf',
         upsert: false,
       })
-      if (upErr) console.warn('Invoice archive failed:', upErr.message)
+      if (upErr) {
+        console.warn('Invoice archive failed:', upErr.message)
+      } else {
+        // 30-day link so recipients have plenty of time before it expires.
+        const { data } = await supabase.storage.from('invoice-pdfs').createSignedUrl(path, 60 * 60 * 24 * 30)
+        signedUrl = data?.signedUrl ?? null
+      }
     } catch (e) {
       console.warn('Invoice archive threw:', (e as Error).message)
     }
@@ -455,6 +466,7 @@ function InvoiceSheet({ invoice, driverId, onClose }: {
       await supabase.from('invoices').update({ status: 'Sent' }).eq('id', invoice.id)
       qc.invalidateQueries({ queryKey: ['my-invoices', driverId] })
     }
+    return signedUrl
   }
 
   async function shareInvoice() {
@@ -474,6 +486,70 @@ function InvoiceSheet({ invoice, driverId, onClose }: {
     } catch (e) {
       const msg = (e as Error).message
       if (!/abort|cancel/i.test(msg)) setError(msg)
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  // The tracking URL wraps the PDF so we can log opens: the view-invoice
+  // edge function bumps last_viewed_at + view_count and 302-redirects
+  // the recipient to a fresh signed PDF link.
+  function trackingUrl(): string {
+    const base = import.meta.env.VITE_SUPABASE_URL as string
+    return `${base.replace(/\/$/, '')}/functions/v1/view-invoice?id=${invoice.id}`
+  }
+
+  // Build / archive the PDF so the tracking link resolves, then open the
+  // recipient's Mail client via mailto: with subject + body + link filled.
+  // iOS can't attach files from a mailto: URL; the tracking URL is the
+  // substitute.
+  async function sendByEmail() {
+    setBusy('email'); setError(null)
+    try {
+      const { generateInvoicePdf } = await import('../lib/invoicePdf')
+      const { data, fileName } = await buildPdfData()
+      const blob = generateInvoicePdf(data)
+      const fallback = await archiveAndFlip(blob, fileName)
+      if (!fallback) throw new Error('Could not archive the PDF. Try Share PDF instead.')
+      const invoiceLabel = invoice.invoice_number || `#${invoice.id.slice(0, 8)}`
+      const companyName = settings?.company_name ?? 'Driven Transportation'
+      const to      = billTo?.email ?? ''
+      const subject = `Invoice ${invoiceLabel} from ${companyName}`
+      const body    = [
+        `Hi${billTo?.name ? ` ${billTo.name}` : ''},`,
+        '',
+        `Please find invoice ${invoiceLabel} for ${fmtMoney(invoice.amount)} at the link below.`,
+        '',
+        trackingUrl(),
+        '',
+        'Thank you,',
+        companyName,
+      ].join('\n')
+      const mailto = `mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
+      window.location.href = mailto
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  async function sendBySms() {
+    setBusy('sms'); setError(null)
+    try {
+      const { generateInvoicePdf } = await import('../lib/invoicePdf')
+      const { data, fileName } = await buildPdfData()
+      const blob = generateInvoicePdf(data)
+      const fallback = await archiveAndFlip(blob, fileName)
+      if (!fallback) throw new Error('Could not archive the PDF. Try Share PDF instead.')
+      const invoiceLabel = invoice.invoice_number || `#${invoice.id.slice(0, 8)}`
+      const companyName = settings?.company_name ?? 'Driven Transportation'
+      const to   = (billTo?.phone ?? '').replace(/[^\d+]/g, '')
+      const body = `Invoice ${invoiceLabel} for ${fmtMoney(invoice.amount)} from ${companyName}: ${trackingUrl()}`
+      const sms = `sms:${to}${to ? '&' : '?'}body=${encodeURIComponent(body)}`
+      window.location.href = sms
+    } catch (e) {
+      setError((e as Error).message)
     } finally {
       setBusy(null)
     }
@@ -510,6 +586,12 @@ function InvoiceSheet({ invoice, driverId, onClose }: {
             <Row k="Issued" v={fmtDate(invoice.issued_date)} />
             <Row k="Due" v={fmtDate(invoice.due_date)} />
             {invoice.paid_date && <Row k="Paid" v={fmtDate(invoice.paid_date)} />}
+            {invoice.last_viewed_at && (
+              <Row
+                k={`Viewed${invoice.view_count && invoice.view_count > 1 ? ` (${invoice.view_count}×)` : ''}`}
+                v={new Date(invoice.last_viewed_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+              />
+            )}
           </div>
 
           <div className="mt-4 pt-4 border-t border-gray-200 flex items-baseline justify-between">
@@ -526,6 +608,24 @@ function InvoiceSheet({ invoice, driverId, onClose }: {
 
         <div className="grid grid-cols-2 gap-2 mt-4">
           <button
+            onClick={sendByEmail}
+            disabled={busy !== null}
+            className="py-3 rounded-xl text-white text-base font-semibold disabled:opacity-50 cursor-pointer"
+            style={{ background: 'var(--color-brand-500)' }}
+          >
+            {busy === 'email' ? 'Preparing…' : 'Email'}
+          </button>
+          <button
+            onClick={sendBySms}
+            disabled={busy !== null}
+            className="py-3 rounded-xl text-white text-base font-semibold disabled:opacity-50 cursor-pointer"
+            style={{ background: 'var(--color-brand-500)' }}
+          >
+            {busy === 'sms' ? 'Preparing…' : 'Text'}
+          </button>
+        </div>
+        <div className="grid grid-cols-2 gap-2 mt-2">
+          <button
             onClick={openPreview}
             disabled={busy !== null}
             className="py-3 rounded-xl border border-gray-200 text-gray-900 text-base font-semibold disabled:opacity-50 cursor-pointer bg-white active:bg-gray-50"
@@ -535,14 +635,13 @@ function InvoiceSheet({ invoice, driverId, onClose }: {
           <button
             onClick={shareInvoice}
             disabled={busy !== null}
-            className="py-3 rounded-xl text-white text-base font-semibold disabled:opacity-50 cursor-pointer"
-            style={{ background: 'var(--color-brand-500)' }}
+            className="py-3 rounded-xl border border-gray-200 text-gray-900 text-base font-semibold disabled:opacity-50 cursor-pointer bg-white active:bg-gray-50"
           >
-            {busy === 'share' ? 'Preparing…' : 'Share invoice'}
+            {busy === 'share' ? 'Preparing…' : 'Share PDF'}
           </button>
         </div>
         <p className="mt-2 text-[11px] text-gray-500 text-center">
-          Share opens iOS's share sheet — pick Mail, Messages, AirDrop, Save to Files, or Print.
+          Email and Text open Mail / Messages with a secure download link pre-filled. Share PDF attaches the file via iOS's share sheet.
         </p>
 
         {invoice.status !== 'Paid' && (
@@ -746,9 +845,9 @@ export function InvoiceFormSheet({ driverId, editing, onClose }: {
       // Resolve billing entity, load, and company settings in parallel.
       const [billToRow, loadRow, companyRow] = await Promise.all([
         form.customer_id
-          ? supabase.from('customers').select('name, email, phone, address').eq('id', form.customer_id).maybeSingle()
+          ? supabase.from('customers').select('name, email, phone, address, mc_number, dot_number').eq('id', form.customer_id).maybeSingle()
           : form.broker_id
-            ? supabase.from('brokers').select('name, email, phone').eq('id', form.broker_id).maybeSingle()
+            ? supabase.from('brokers').select('name, email, phone, mc_number, dot_number').eq('id', form.broker_id).maybeSingle()
             : Promise.resolve({ data: null, error: null }),
         form.load_id
           ? supabase.from('loads').select('load_number, origin_city, origin_state, dest_city, dest_state, miles').eq('id', form.load_id).maybeSingle()
@@ -768,7 +867,7 @@ export function InvoiceFormSheet({ driverId, editing, onClose }: {
         logoDims    = logoDataUrl ? await measureDataUrl(logoDataUrl) : null
       }
 
-      const bt = billToRow.data as { name: string; email?: string | null; phone?: string | null; address?: string | null } | null
+      const bt = billToRow.data as { name: string; email?: string | null; phone?: string | null; address?: string | null; mc_number?: string | null; dot_number?: string | null } | null
       const lo = loadRow.data   as { load_number: string | null; origin_city: string | null; origin_state: string | null; dest_city: string | null; dest_state: string | null; miles: number | null } | null
 
       const loadLabel = lo?.load_number || (form.load_id ? `#${form.load_id.slice(0, 8)}` : '—')
@@ -801,7 +900,7 @@ export function InvoiceFormSheet({ driverId, editing, onClose }: {
           dot_number: company?.dot_number ?? null,
           ein:        company?.ein        ?? null,
         },
-        billTo: bt ? { name: bt.name, email: bt.email ?? null, phone: bt.phone ?? null, address: (bt as { address?: string | null }).address ?? null } : null,
+        billTo: bt ? { name: bt.name, email: bt.email ?? null, phone: bt.phone ?? null, address: (bt as { address?: string | null }).address ?? null, mc_number: bt.mc_number ?? null, dot_number: bt.dot_number ?? null } : null,
         lineItems: [{ description: routeDesc, miles: lo?.miles ?? null, amount }],
         totalAmount: amount,
       })

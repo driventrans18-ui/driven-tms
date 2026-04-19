@@ -11,6 +11,7 @@ interface Broker {
   phone: string | null
   email: string | null
   mc_number: string | null
+  dot_number: string | null
   notes: string | null
 }
 
@@ -105,7 +106,8 @@ function BrokerSheet({ broker, onClose, onEdit }: { broker: Broker; onClose: () 
         </div>
         <dl className="space-y-3 text-base">
           {broker.contact_name && <DetailRow k="Contact" v={broker.contact_name} />}
-          {broker.mc_number && <DetailRow k="MC#" v={broker.mc_number} />}
+          {broker.mc_number  && <DetailRow k="MC#"  v={broker.mc_number}  />}
+          {broker.dot_number && <DetailRow k="DOT#" v={broker.dot_number} />}
           {broker.email && <DetailRow k="Email" v={broker.email} />}
           {broker.phone && <DetailRow k="Phone" v={broker.phone} />}
         </dl>
@@ -148,6 +150,7 @@ function BrokerFormSheet({ editing, onClose }: { editing: Broker | null; onClose
     phone:        editing?.phone        ?? '',
     email:        editing?.email        ?? '',
     mc_number:    editing?.mc_number    ?? '',
+    dot_number:   editing?.dot_number   ?? '',
     notes:        editing?.notes        ?? '',
   })
   const [error, setError] = useState<string | null>(null)
@@ -164,6 +167,7 @@ function BrokerFormSheet({ editing, onClose }: { editing: Broker | null; onClose
         phone:        form.phone        || null,
         email:        form.email        || null,
         mc_number:    form.mc_number    || null,
+        dot_number:   form.dot_number   || null,
         notes:        form.notes        || null,
       }
       const { error } = isEdit && editing
@@ -198,13 +202,17 @@ function BrokerFormSheet({ editing, onClose }: { editing: Broker | null; onClose
             <input value={form.contact_name} onChange={e => set('contact_name', e.target.value)} placeholder="Jane Doe"
               className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-base" />
           </Field>
+          <Field label="Phone">
+            <input value={form.phone} onChange={e => set('phone', e.target.value)} placeholder="(555) 123-4567" type="tel"
+              className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-base" />
+          </Field>
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Phone">
-              <input value={form.phone} onChange={e => set('phone', e.target.value)} placeholder="(555) 123-4567" type="tel"
-                className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-base" />
-            </Field>
             <Field label="MC#">
               <input value={form.mc_number} onChange={e => set('mc_number', e.target.value)} placeholder="123456"
+                className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-base" />
+            </Field>
+            <Field label="DOT#">
+              <input value={form.dot_number} onChange={e => set('dot_number', e.target.value)} placeholder="1234567"
                 className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-base" />
             </Field>
           </div>
