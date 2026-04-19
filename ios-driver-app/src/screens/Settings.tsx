@@ -8,24 +8,32 @@ import { supabase } from '../lib/supabase'
 // the "From" block of generated invoices.
 
 interface CompanyInfo {
-  company_name:      string | null
-  address:           string | null
-  city:              string | null
-  state:             string | null
-  zip:               string | null
-  phone:             string | null
-  email:             string | null
-  mc_number:         string | null
-  dot_number:        string | null
-  ein:               string | null
-  factoring_enabled: boolean
-  factoring_pct:     number | null
+  company_name:                  string | null
+  address:                       string | null
+  city:                          string | null
+  state:                         string | null
+  zip:                           string | null
+  phone:                         string | null
+  email:                         string | null
+  mc_number:                     string | null
+  dot_number:                    string | null
+  ein:                           string | null
+  factoring_enabled:             boolean
+  factoring_pct:                 number | null
+  ai_price_input_per_mtok:       number
+  ai_price_output_per_mtok:      number
+  ai_price_cache_read_per_mtok:  number
+  ai_price_cache_write_per_mtok: number
 }
 
 const EMPTY_COMPANY: CompanyInfo = {
   company_name: '', address: '', city: '', state: '', zip: '',
   phone: '', email: '', mc_number: '', dot_number: '', ein: '',
   factoring_enabled: false, factoring_pct: null,
+  ai_price_input_per_mtok: 3,
+  ai_price_output_per_mtok: 15,
+  ai_price_cache_read_per_mtok: 0.3,
+  ai_price_cache_write_per_mtok: 3.75,
 }
 
 export function Settings({ onClose }: { onClose: () => void }) {
@@ -61,6 +69,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
         style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0) + 40px)' }}
       >
         <CompanyInfoSection />
+        <ApiUsageSection />
 
         <section>
           <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide px-1 mb-2">Appearance</h2>
@@ -108,7 +117,7 @@ function CompanyInfoSection() {
     queryKey: ['company-settings'],
     queryFn: async () => {
       const { data, error } = await supabase.from('company_settings')
-        .select('company_name, address, city, state, zip, phone, email, mc_number, dot_number, ein, factoring_enabled, factoring_pct')
+        .select('company_name, address, city, state, zip, phone, email, mc_number, dot_number, ein, factoring_enabled, factoring_pct, ai_price_input_per_mtok, ai_price_output_per_mtok, ai_price_cache_read_per_mtok, ai_price_cache_write_per_mtok')
         .limit(1).maybeSingle()
       if (error) throw error
       return (data ?? EMPTY_COMPANY) as CompanyInfo
@@ -139,8 +148,12 @@ function CompanyInfoSection() {
         mc_number:         form.mc_number?.trim()    || null,
         dot_number:        form.dot_number?.trim()   || null,
         ein:               form.ein?.trim()          || null,
-        factoring_enabled: form.factoring_enabled,
-        factoring_pct:     pctNum != null && Number.isFinite(pctNum) ? pctNum : null,
+        factoring_enabled:             form.factoring_enabled,
+        factoring_pct:                 pctNum != null && Number.isFinite(pctNum) ? pctNum : null,
+        ai_price_input_per_mtok:       form.ai_price_input_per_mtok,
+        ai_price_output_per_mtok:      form.ai_price_output_per_mtok,
+        ai_price_cache_read_per_mtok:  form.ai_price_cache_read_per_mtok,
+        ai_price_cache_write_per_mtok: form.ai_price_cache_write_per_mtok,
       }
       // The table stores a single row; update the only one if it
       // exists, otherwise insert a fresh row. Filter `id is not null`
@@ -252,5 +265,185 @@ function Field({ label, value, onChange, placeholder, type }: {
         className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-base"
       />
     </label>
+  )
+}
+
+// ── AI Usage ─────────────────────────────────────────────────────────────────
+// Month-to-date token totals from the ai_usage log, valued against the
+// per-MTok prices stored on company_settings. Also lets the user edit
+// the prices inline when Anthropic's rate card changes.
+
+const LABEL: Record<string, string> = {
+  parse_rate_con: 'Rate con scans',
+  parse_receipt:  'Receipt scans',
+}
+
+function fmtUsd(n: number): string {
+  return '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 4 })
+}
+
+function fmtTokens(n: number): string {
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(2) + 'M'
+  if (n >= 1_000)     return (n / 1_000).toFixed(1)     + 'k'
+  return n.toLocaleString()
+}
+
+function ApiUsageSection() {
+  const qc = useQueryClient()
+
+  // Prices — pulled into their own query so the Save button can update
+  // them without churning the main CompanyInfo form.
+  const { data: prices } = useQuery({
+    queryKey: ['ai-prices'],
+    queryFn: async () => {
+      const { data } = await supabase.from('company_settings')
+        .select('ai_price_input_per_mtok, ai_price_output_per_mtok, ai_price_cache_read_per_mtok, ai_price_cache_write_per_mtok')
+        .limit(1).maybeSingle()
+      return (data ?? {
+        ai_price_input_per_mtok: 3, ai_price_output_per_mtok: 15,
+        ai_price_cache_read_per_mtok: 0.3, ai_price_cache_write_per_mtok: 3.75,
+      }) as {
+        ai_price_input_per_mtok: number; ai_price_output_per_mtok: number
+        ai_price_cache_read_per_mtok: number; ai_price_cache_write_per_mtok: number
+      }
+    },
+  })
+
+  // Month-to-date usage, grouped by event.
+  const { data: rows = [] } = useQuery({
+    queryKey: ['ai-usage-month'],
+    queryFn: async () => {
+      const firstOfMonth = new Date()
+      firstOfMonth.setHours(0, 0, 0, 0); firstOfMonth.setDate(1)
+      const { data, error } = await supabase.from('ai_usage')
+        .select('event, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens')
+        .gte('created_at', firstOfMonth.toISOString())
+      if (error) throw error
+      return (data ?? []) as Array<{
+        event: string
+        input_tokens: number; output_tokens: number
+        cache_read_tokens: number; cache_write_tokens: number
+      }>
+    },
+  })
+
+  const byEvent = new Map<string, { input: number; output: number; cache_read: number; cache_write: number; calls: number }>()
+  for (const r of rows) {
+    const cur = byEvent.get(r.event) ?? { input: 0, output: 0, cache_read: 0, cache_write: 0, calls: 0 }
+    cur.input       += r.input_tokens
+    cur.output      += r.output_tokens
+    cur.cache_read  += r.cache_read_tokens
+    cur.cache_write += r.cache_write_tokens
+    cur.calls       += 1
+    byEvent.set(r.event, cur)
+  }
+
+  const priceInput  = prices?.ai_price_input_per_mtok       ?? 3
+  const priceOutput = prices?.ai_price_output_per_mtok      ?? 15
+  const priceCr     = prices?.ai_price_cache_read_per_mtok  ?? 0.3
+  const priceCw     = prices?.ai_price_cache_write_per_mtok ?? 3.75
+  const costOf = (u: { input: number; output: number; cache_read: number; cache_write: number }) =>
+    (u.input       * priceInput  / 1_000_000)
+  + (u.output      * priceOutput / 1_000_000)
+  + (u.cache_read  * priceCr     / 1_000_000)
+  + (u.cache_write * priceCw     / 1_000_000)
+
+  const totals = Array.from(byEvent.values()).reduce(
+    (a, b) => ({ input: a.input+b.input, output: a.output+b.output, cache_read: a.cache_read+b.cache_read, cache_write: a.cache_write+b.cache_write, calls: a.calls+b.calls }),
+    { input: 0, output: 0, cache_read: 0, cache_write: 0, calls: 0 },
+  )
+  const totalCost = costOf(totals)
+
+  // Editable price form.
+  const [pf, setPf] = useState({ inp: '', out: '', cr: '', cw: '' })
+  const [savedAt, setSavedAt] = useState<number | null>(null)
+  useEffect(() => {
+    if (prices) setPf({
+      inp: String(prices.ai_price_input_per_mtok),
+      out: String(prices.ai_price_output_per_mtok),
+      cr:  String(prices.ai_price_cache_read_per_mtok),
+      cw:  String(prices.ai_price_cache_write_per_mtok),
+    })
+  }, [prices])
+
+  const savePrices = useMutation({
+    mutationFn: async () => {
+      const payload = {
+        ai_price_input_per_mtok:       Number(pf.inp) || 0,
+        ai_price_output_per_mtok:      Number(pf.out) || 0,
+        ai_price_cache_read_per_mtok:  Number(pf.cr)  || 0,
+        ai_price_cache_write_per_mtok: Number(pf.cw)  || 0,
+      }
+      const { data: existing } = await supabase.from('company_settings').select('id').limit(1).maybeSingle()
+      const { error } = existing
+        ? await supabase.from('company_settings').update(payload).eq('id', (existing as { id: string }).id)
+        : await supabase.from('company_settings').insert(payload)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['ai-prices'] })
+      qc.invalidateQueries({ queryKey: ['company-settings'] })
+      setSavedAt(Date.now())
+    },
+  })
+
+  return (
+    <section>
+      <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide px-1 mb-2">API Usage</h2>
+      <p className="text-xs text-gray-500 px-1 mb-2">
+        Claude token usage this month, valued at your configured rate.
+      </p>
+
+      <div className="bg-white rounded-2xl p-4 space-y-3">
+        <div className="text-center py-2">
+          <p className="text-xs text-gray-500">This month</p>
+          <p className="text-3xl font-bold text-gray-900 mt-1">{fmtUsd(totalCost)}</p>
+          <p className="text-xs text-gray-500 mt-1">{totals.calls} call{totals.calls === 1 ? '' : 's'} · {fmtTokens(totals.input + totals.output)} tokens</p>
+        </div>
+
+        {byEvent.size === 0 ? (
+          <p className="text-center text-sm text-gray-400 py-4">No calls yet this month.</p>
+        ) : (
+          <ul className="divide-y divide-gray-100">
+            {Array.from(byEvent.entries()).map(([event, u]) => (
+              <li key={event} className="py-2.5 flex items-center justify-between">
+                <span className="min-w-0">
+                  <span className="block text-sm font-medium text-gray-900">{LABEL[event] ?? event}</span>
+                  <span className="block text-xs text-gray-500">
+                    {u.calls} call{u.calls === 1 ? '' : 's'} · in {fmtTokens(u.input)} · out {fmtTokens(u.output)}
+                  </span>
+                </span>
+                <span className="text-sm font-semibold text-gray-900 ml-2 shrink-0">{fmtUsd(costOf(u))}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {/* Editable prices — Anthropic occasionally tweaks their rate
+            card, so the defaults shouldn't be hard-coded. */}
+        <div className="pt-2 mt-2 border-t border-gray-100 space-y-2">
+          <p className="text-xs font-medium text-gray-700">Prices ($/MTok)</p>
+          <div className="grid grid-cols-2 gap-2">
+            <Field label="Input"       value={pf.inp} onChange={v => setPf(f => ({ ...f, inp: v }))} type="number" placeholder="3" />
+            <Field label="Output"      value={pf.out} onChange={v => setPf(f => ({ ...f, out: v }))} type="number" placeholder="15" />
+            <Field label="Cache read"  value={pf.cr}  onChange={v => setPf(f => ({ ...f, cr:  v }))} type="number" placeholder="0.3" />
+            <Field label="Cache write" value={pf.cw}  onChange={v => setPf(f => ({ ...f, cw:  v }))} type="number" placeholder="3.75" />
+          </div>
+          {savePrices.isError && (
+            <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">
+              {(savePrices.error as Error).message}
+            </p>
+          )}
+          <button
+            onClick={() => savePrices.mutate()}
+            disabled={savePrices.isPending}
+            className="w-full py-2.5 rounded-xl text-white text-sm font-semibold disabled:opacity-50 cursor-pointer"
+            style={{ background: 'var(--color-brand-500)' }}
+          >
+            {savePrices.isPending ? 'Saving…' : savedAt ? 'Saved ✓ — Save again' : 'Save prices'}
+          </button>
+        </div>
+      </div>
+    </section>
   )
 }

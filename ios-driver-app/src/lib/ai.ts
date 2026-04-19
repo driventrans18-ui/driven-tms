@@ -4,6 +4,24 @@ import { supabase } from './supabase'
 // wrapper around a Supabase `functions.invoke(...)` call so callers don't
 // have to know which function name they're hitting.
 
+// Fire-and-forget write to the ai_usage log. Called after every Claude
+// call so Settings can surface month-to-date token + cost totals. Errors
+// are swallowed — a failed log row should never break the user-visible
+// parse result.
+async function logAiUsage(event: string, usage: RateConUsage): Promise<void> {
+  try {
+    await supabase.from('ai_usage').insert({
+      event,
+      input_tokens:       usage.input,
+      output_tokens:      usage.output,
+      cache_read_tokens:  usage.cache_read,
+      cache_write_tokens: usage.cache_write,
+    })
+  } catch {
+    // Intentionally empty — logging is best-effort.
+  }
+}
+
 // Fields Claude returns from parse-rate-con. Shape intentionally mirrors
 // the LoadFormSheet's editable fields so the merge in the form is a
 // flat spread (plus a couple of derived lookups like broker_mc → broker_id).
@@ -59,7 +77,9 @@ export async function parseRateCon(
   const res = data as { prefill?: RateConPrefill; usage?: RateConUsage; error?: string }
   if (res?.error) throw new Error(res.error)
   if (!res?.prefill) throw new Error('parse-rate-con returned no prefill')
-  return { prefill: res.prefill, usage: res.usage ?? { input: 0, output: 0, cache_read: 0, cache_write: 0 } }
+  const usage = res.usage ?? { input: 0, output: 0, cache_read: 0, cache_write: 0 }
+  void logAiUsage('parse_rate_con', usage)
+  return { prefill: res.prefill, usage }
 }
 
 // Expand a Supabase FunctionsHttpError into something the UI can
@@ -104,7 +124,9 @@ export async function parseReceipt(
   const res = data as { prefill?: ReceiptPrefill; usage?: RateConUsage; error?: string }
   if (res?.error) throw new Error(res.error)
   if (!res?.prefill) throw new Error('parse-receipt returned no prefill')
-  return { prefill: res.prefill, usage: res.usage ?? { input: 0, output: 0, cache_read: 0, cache_write: 0 } }
+  const usage = res.usage ?? { input: 0, output: 0, cache_read: 0, cache_write: 0 }
+  void logAiUsage('parse_receipt', usage)
+  return { prefill: res.prefill, usage }
 }
 
 // ── Broker FMCSA lookup ─────────────────────────────────────────────────────
