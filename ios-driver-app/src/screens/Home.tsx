@@ -169,6 +169,7 @@ export function Home({ driver, onGoToLoads, onOpenDriverMode }: {
   const [podPickerOpen, setPodPickerOpen] = useState(false)
   const [carrierLookupOpen, setCarrierLookupOpen] = useState(false)
   const [aiAssistLoadId, setAiAssistLoadId] = useState<string | null>(null)
+  const [aiPickerOpen, setAiPickerOpen] = useState(false)
 
   const captureFreight = useMutation({
     mutationFn: async (target: { id: string; loadRef: string }) => {
@@ -373,6 +374,28 @@ export function Home({ driver, onGoToLoads, onOpenDriverMode }: {
               <span className="block text-[11px] text-gray-500">FMCSA lookup by MC# or DOT#</span>
             </span>
           </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (activeLoad) setAiAssistLoadId(activeLoad.id)
+              else setAiPickerOpen(true)
+            }}
+            className="bg-white rounded-2xl p-4 text-left active:bg-gray-50 cursor-pointer flex items-center gap-3"
+          >
+            <span
+              className="w-11 h-11 flex items-center justify-center shrink-0 rounded-full text-xl"
+              style={{ background: 'rgba(0, 168, 232, 0.12)' }}
+              aria-hidden
+            >
+              ✨
+            </span>
+            <span>
+              <span className="block text-sm font-semibold text-gray-900">Ask AI</span>
+              <span className="block text-[11px] text-gray-500">
+                {activeLoad ? 'Analyze this load, draft email/notes' : 'Pick a load to analyze'}
+              </span>
+            </span>
+          </button>
         </div>
       </div>
 
@@ -409,6 +432,17 @@ export function Home({ driver, onGoToLoads, onOpenDriverMode }: {
         onPick={(id, loadRef) => {
           setPodPickerOpen(false)
           scanPod.mutate({ id, loadRef })
+        }}
+      />
+    )}
+    {aiPickerOpen && (
+      <FreightLoadPicker
+        driverId={driver.id}
+        title="Ask AI about…"
+        onClose={() => setAiPickerOpen(false)}
+        onPick={(id) => {
+          setAiPickerOpen(false)
+          setAiAssistLoadId(id)
         }}
       />
     )}
