@@ -278,6 +278,20 @@ function LoadSheet({ load, driverId, onClose }: { load: LoadDetail; driverId: st
 
 // ── Load form sheet (create + edit) ──────────────────────────────────────────
 
+// Read a File into a base64 string (no data:... prefix). Used when the
+// driver picks a rate-con PDF or image from the Files app.
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const result = reader.result as string
+      resolve(result.substring(result.indexOf(',') + 1))
+    }
+    reader.onerror = () => reject(reader.error)
+    reader.readAsDataURL(file)
+  })
+}
+
 // Turn an ISO timestamp (or null) into the value `<input type="datetime-local">`
 // expects: YYYY-MM-DDTHH:MM in local time.
 function isoToLocalInput(iso: string | null): string {
@@ -384,7 +398,7 @@ function LoadFormSheet({ driverId, editing, onClose }: {
     try {
       const images = await scanDocument()
       if (images.length === 0) return
-      const { prefill, usage } = await parseRateCon(images)
+      const { prefill, usage } = await parseRateCon({ images })
       const filled = applyPrefill(prefill)
       const cached = usage.cache_read > 0 ? ' (cached)' : ''
       setScanBanner(filled > 0
@@ -393,6 +407,31 @@ function LoadFormSheet({ driverId, editing, onClose }: {
     } catch (e) {
       const msg = (e as Error).message
       if (!/cancel/i.test(msg)) setError(`Scan failed: ${msg}`)
+    } finally {
+      setScanning(false)
+    }
+  }
+
+  // Pick a rate con PDF / image from the iOS Files app (iCloud Drive, email
+  // downloads, etc.) and hand it to the edge function. Unlike scan, this is
+  // always available — even on web / simulator where the camera doesn't
+  // work, and for brokers who send rate cons as PDFs by email.
+  async function fileToPrefill(file: File) {
+    if (scanning) return
+    setScanning(true); setError(null); setScanBanner(null)
+    try {
+      const base64 = await fileToBase64(file)
+      const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')
+      const { prefill, usage } = isPdf
+        ? await parseRateCon({ pdf: base64 })
+        : await parseRateCon({ images: [base64], mimeType: file.type || 'image/jpeg' })
+      const filled = applyPrefill(prefill)
+      const cached = usage.cache_read > 0 ? ' (cached)' : ''
+      setScanBanner(filled > 0
+        ? `Auto-filled ${filled} field${filled === 1 ? '' : 's'} from ${isPdf ? 'PDF' : 'image'}${cached}. Review before saving.`
+        : `Couldn't extract any fields from that file${cached}. Enter manually.`)
+    } catch (e) {
+      setError(`Parse failed: ${(e as Error).message}`)
     } finally {
       setScanning(false)
     }
@@ -478,26 +517,56 @@ function LoadFormSheet({ driverId, editing, onClose }: {
             <button onClick={onClose} className="text-gray-400 text-lg cursor-pointer">✕</button>
           </div>
 
-          {/* Scan rate con → auto-fill. Only offered on create (editing an
-              existing load probably already has the fields) and only on
-              platforms with the native doc scanner. */}
-          {!isEdit && isDocScanAvailable() && (
-            <div className="mb-4">
-              <button
-                type="button"
-                onClick={scanToPrefill}
-                disabled={scanning}
-                className="w-full py-3 rounded-xl text-white text-base font-semibold disabled:opacity-60 cursor-pointer flex items-center justify-center gap-2"
-                style={{ background: 'var(--color-brand-500)' }}
+          {/* Scan (physical rate con) + pick from Files (PDF attachment from
+              email / iCloud Drive) — both route through the same
+              parse-rate-con edge function and merge into the form below.
+              Only offered on create; editing an existing load already has
+              the fields. */}
+          {!isEdit && (
+            <div className="mb-4 space-y-2">
+              {isDocScanAvailable() && (
+                <button
+                  type="button"
+                  onClick={scanToPrefill}
+                  disabled={scanning}
+                  className="w-full py-3 rounded-xl text-white text-base font-semibold disabled:opacity-60 cursor-pointer flex items-center justify-center gap-2"
+                  style={{ background: 'var(--color-brand-500)' }}
+                >
+                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                    <path d="M3 7V5a2 2 0 012-2h2M17 3h2a2 2 0 012 2v2M21 17v2a2 2 0 01-2 2h-2M7 21H5a2 2 0 01-2-2v-2" />
+                    <path d="M7 12h10" />
+                  </svg>
+                  {scanning ? 'Reading rate con…' : 'Scan rate con to auto-fill'}
+                </button>
+              )}
+
+              <label
+                htmlFor="ratecon-file-picker"
+                aria-disabled={scanning || undefined}
+                className={`w-full py-3 rounded-xl text-base font-semibold cursor-pointer flex items-center justify-center gap-2 border ${scanning ? 'opacity-60 pointer-events-none' : ''}`}
+                style={{ borderColor: 'var(--color-brand-500)', color: 'var(--color-brand-500)' }}
               >
                 <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                  <path d="M3 7V5a2 2 0 012-2h2M17 3h2a2 2 0 012 2v2M21 17v2a2 2 0 01-2 2h-2M7 21H5a2 2 0 01-2-2v-2" />
-                  <path d="M7 12h10" />
+                  <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+                  <path d="M14 2v6h6" />
                 </svg>
-                {scanning ? 'Reading rate con…' : 'Scan rate con to auto-fill'}
-              </button>
+                {scanning ? 'Reading…' : 'Pick rate con from Files'}
+              </label>
+              <input
+                id="ratecon-file-picker"
+                type="file"
+                accept="application/pdf,image/*"
+                className="hidden"
+                disabled={scanning}
+                onChange={e => {
+                  const f = e.target.files?.[0]
+                  e.target.value = ''
+                  if (f) fileToPrefill(f)
+                }}
+              />
+
               {scanBanner && (
-                <p className="mt-2 text-xs px-1" style={{ color: 'var(--color-brand-600)' }}>
+                <p className="text-xs px-1" style={{ color: 'var(--color-brand-600)' }}>
                   {scanBanner}
                 </p>
               )}

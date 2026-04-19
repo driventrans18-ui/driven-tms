@@ -33,18 +33,28 @@ export interface RateConUsage {
   cache_write: number
 }
 
-// Send scanned rate-con pages (base64 JPEGs, typically from
-// VNDocumentCameraViewController) to the edge function. Returns a best-
-// effort prefill object — any field the model couldn't extract with
-// confidence comes back null.
+// Input to the parser. Two shapes because rate cons arrive two ways: the
+// driver scans a paper copy (one or more JPEG pages) or picks a PDF from
+// the Files app / email attachment.
+export type ParseRateConInput =
+  | { images: string[]; mimeType?: string }
+  | { pdf: string }
+
+// Send rate-con content to the edge function. Returns a best-effort prefill
+// — any field the model couldn't extract with confidence comes back null.
 export async function parseRateCon(
-  images: string[],
-  mimeType = 'image/jpeg',
+  input: ParseRateConInput,
 ): Promise<{ prefill: RateConPrefill; usage: RateConUsage }> {
-  if (images.length === 0) throw new Error('At least one page is required')
-  const { data, error } = await supabase.functions.invoke('parse-rate-con', {
-    body: { images, mime_type: mimeType },
-  })
+  const body: Record<string, unknown> = {}
+  if ('pdf' in input) {
+    if (!input.pdf) throw new Error('Empty PDF payload')
+    body.pdf = input.pdf
+  } else {
+    if (input.images.length === 0) throw new Error('At least one page is required')
+    body.images = input.images
+    body.mime_type = input.mimeType ?? 'image/jpeg'
+  }
+  const { data, error } = await supabase.functions.invoke('parse-rate-con', { body })
   if (error) throw new Error(error.message)
   const res = data as { prefill?: RateConPrefill; usage?: RateConUsage; error?: string }
   if (res?.error) throw new Error(res.error)

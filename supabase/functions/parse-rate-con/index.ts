@@ -73,7 +73,7 @@ Deno.serve(async (req) => {
     return json({ error: 'ANTHROPIC_API_KEY not configured on the edge function' }, 500)
   }
 
-  let body: { images?: string[]; mime_type?: string }
+  let body: { images?: string[]; pdf?: string; mime_type?: string }
   try {
     body = await req.json()
   } catch {
@@ -81,12 +81,37 @@ Deno.serve(async (req) => {
   }
 
   const images = Array.isArray(body.images) ? body.images.slice(0, MAX_PAGES) : []
-  if (images.length === 0) {
-    return json({ error: 'images[] required (one or more base64-encoded pages)' }, 400)
+  const pdf = typeof body.pdf === 'string' ? body.pdf : ''
+  if (images.length === 0 && !pdf) {
+    return json({ error: 'images[] or pdf required (base64 content)' }, 400)
   }
   const mime = body.mime_type || 'image/jpeg'
 
   const anthropic = new Anthropic({ apiKey: ANTHROPIC_API_KEY })
+
+  // Build Claude's content blocks. Single base64 PDF uses a document block;
+  // one or more images use image blocks. Both can sit in the same user turn.
+  const contentBlocks: Array<
+    | { type: 'image'; source: { type: 'base64'; media_type: 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp'; data: string } }
+    | { type: 'document'; source: { type: 'base64'; media_type: 'application/pdf'; data: string } }
+    | { type: 'text'; text: string }
+  > = []
+  if (pdf) {
+    contentBlocks.push({
+      type: 'document',
+      source: { type: 'base64', media_type: 'application/pdf', data: pdf },
+    })
+  }
+  for (const data of images) {
+    contentBlocks.push({
+      type: 'image',
+      source: { type: 'base64', media_type: mime as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp', data },
+    })
+  }
+  contentBlocks.push({
+    type: 'text',
+    text: 'Extract the rate confirmation fields into the JSON object described in the system prompt. Return only the JSON object.',
+  })
 
   try {
     const response = await anthropic.messages.create({
@@ -102,16 +127,7 @@ Deno.serve(async (req) => {
       messages: [
         {
           role: 'user',
-          content: [
-            ...images.map(data => ({
-              type: 'image' as const,
-              source: { type: 'base64' as const, media_type: mime as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp', data },
-            })),
-            {
-              type: 'text',
-              text: 'Extract the rate confirmation fields into the JSON object described in the system prompt. Return only the JSON object.',
-            },
-          ],
+          content: contentBlocks,
         },
       ],
     })
