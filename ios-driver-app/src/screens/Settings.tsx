@@ -30,7 +30,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
         </button>
       </header>
 
-      <main className="flex-1 overflow-y-auto px-4 pb-6 space-y-5">
+      <main className="flex-1 overflow-y-auto px-4 pb-10 space-y-5">
         <section>
           <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide px-1 mb-2">Appearance</h2>
           <div className="bg-white rounded-2xl divide-y divide-gray-100">

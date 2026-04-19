@@ -10,8 +10,8 @@ export function ScreenHeader({ title, action }: {
   action?: ReactNode
 }) {
   return (
-    <div className="flex items-center justify-between mb-4 pt-1">
-      <h1 className="text-3xl font-bold text-gray-900">{title}</h1>
+    <div className="flex items-center justify-between mb-5 pt-2">
+      <h1 className="text-[34px] leading-none font-bold text-gray-900 tracking-tight">{title}</h1>
       {action ? <div className="flex items-center">{action}</div> : null}
     </div>
   )

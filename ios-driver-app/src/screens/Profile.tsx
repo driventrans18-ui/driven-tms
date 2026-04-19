@@ -129,7 +129,7 @@ export function Profile({ driver, email, onOpenBrokers, onOpenSettings }: {
   }
 
   return (
-    <div className="space-y-5 pb-6">
+    <div className="space-y-5 pb-10">
       <ScreenHeader
         title="Profile"
         action={

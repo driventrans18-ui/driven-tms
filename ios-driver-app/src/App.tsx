@@ -79,7 +79,10 @@ function Shell({ tab, setTab, userId, email }: {
       className="fixed inset-0 flex flex-col"
       style={{ paddingTop: 'env(safe-area-inset-top, 0)', background: 'var(--color-surface-bg)' }}
     >
-      <main className="flex-1 overflow-y-auto px-4 pt-4 pb-4">
+      {/* Breathing room: pt-2 under the safe-area-inset-top gives the large
+          title some air; pb-8 keeps the last section clear of the tab bar
+          even when the inner screen's own pb isn't enough. */}
+      <main className="flex-1 overflow-y-auto px-4 pt-2 pb-8">
         {tab === 'home'     && <Home driver={driver} onGoToLoads={() => setTab('loads')} onOpenDriverMode={() => setDriverModeOpen(true)} />}
         {tab === 'loads'    && <Loads driver={driver} />}
         {tab === 'expenses' && <Expenses />}
