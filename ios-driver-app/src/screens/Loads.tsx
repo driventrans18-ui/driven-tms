@@ -36,6 +36,7 @@ interface LoadDetail extends LoadCardLoad {
   delivery_notes: string | null
   shipper_name: string | null
   receiver_name: string | null
+  apply_factoring: boolean | null
   brokers: { id: string; name: string; phone: string | null } | null
   trailers: { id: string; trailer_number: string | null } | null
 }
@@ -92,7 +93,7 @@ export function Loads({ driver }: { driver: Driver }) {
     queryKey: ['my-loads', driver.id],
     queryFn: async () => {
       const { data, error } = await supabase.from('loads')
-        .select('id, load_number, origin_city, origin_state, dest_city, dest_state, rate, miles, status, eta, load_type, created_at, pickup_at, deliver_by, deadhead_miles, pickup_rating, pickup_notes, delivery_rating, delivery_notes, shipper_name, receiver_name, brokers(id, name, phone), trailers(id, trailer_number)')
+        .select('id, load_number, origin_city, origin_state, dest_city, dest_state, rate, miles, status, eta, load_type, created_at, pickup_at, deliver_by, deadhead_miles, pickup_rating, pickup_notes, delivery_rating, delivery_notes, shipper_name, receiver_name, apply_factoring, brokers(id, name, phone), trailers(id, trailer_number)')
         .eq('driver_id', driver.id)
         .order('created_at', { ascending: false })
       if (error) throw error
@@ -332,6 +333,8 @@ function LoadFormSheet({ driverId, editing, onClose }: {
     broker_id:   editing?.brokers?.id  ?? '',
     truck_id:    '',
     trailer_id:  editing?.trailers?.id ?? '',
+    // null = inherit company default; true/false = explicit override.
+    apply_factoring: editing?.apply_factoring ?? null as boolean | null,
   })
   const [error, setError] = useState<string | null>(null)
   const [quickBrokerOpen,  setQuickBrokerOpen]  = useState(false)
@@ -463,6 +466,17 @@ function LoadFormSheet({ driverId, editing, onClose }: {
     },
   })
 
+  // Company-wide factoring settings — surfaced here so the driver can see
+  // the rate and the current default next to the per-load override.
+  const { data: companyRow } = useQuery({
+    queryKey: ['company-settings-for-load'],
+    queryFn: async () => {
+      const { data } = await supabase.from('company_settings')
+        .select('factoring_enabled, factoring_pct').limit(1).maybeSingle()
+      return data as { factoring_enabled: boolean | null; factoring_pct: number | null } | null
+    },
+  })
+
   const save = useMutation({
     mutationFn: async () => {
       const payload = {
@@ -489,6 +503,7 @@ function LoadFormSheet({ driverId, editing, onClose }: {
         truck_id:     form.truck_id  || null,
         trailer_id:   form.trailer_id || null,
         driver_id:    driverId,
+        apply_factoring: form.apply_factoring,
       }
       const { error } = isEdit && editing
         ? await supabase.from('loads').update(payload).eq('id', editing.id)
@@ -573,6 +588,36 @@ function LoadFormSheet({ driverId, editing, onClose }: {
               )}
             </div>
           )}
+
+          {/* Per-load factoring opt-in. The rate + company default come
+              from Settings; this tick lets the driver override on this
+              specific load so it flows through to the invoice. */}
+          {(() => {
+            const pct = companyRow?.factoring_pct
+            const defaultOn = !!companyRow?.factoring_enabled
+            const on = form.apply_factoring === true || form.apply_factoring === false
+              ? form.apply_factoring
+              : defaultOn
+            const rateLabel = pct != null && Number.isFinite(pct) && pct > 0 ? `${pct}%` : '—'
+            return (
+              <div className="mb-4 rounded-xl bg-gray-50 border border-gray-200 p-3">
+                <label className="flex items-center justify-between cursor-pointer">
+                  <span>
+                    <span className="block text-sm font-medium text-gray-900">Apply factoring fee ({rateLabel})</span>
+                    <span className="block text-xs text-gray-500 mt-0.5">
+                      {defaultOn ? 'Company default: on. Uncheck for direct-bill on this load.' : 'Company default: off. Check if this load will be factored.'}
+                    </span>
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={on}
+                    onChange={e => set('apply_factoring', e.target.checked)}
+                    className="w-5 h-5 cursor-pointer accent-[color:var(--color-brand-500)]"
+                  />
+                </label>
+              </div>
+            )
+          })()}
 
           <div className="space-y-4">
             <div>
