@@ -55,11 +55,26 @@ export async function parseRateCon(
     body.mime_type = input.mimeType ?? 'image/jpeg'
   }
   const { data, error } = await supabase.functions.invoke('parse-rate-con', { body })
-  if (error) throw new Error(error.message)
+  if (error) throw await expandFunctionError(error, 'parse-rate-con')
   const res = data as { prefill?: RateConPrefill; usage?: RateConUsage; error?: string }
   if (res?.error) throw new Error(res.error)
   if (!res?.prefill) throw new Error('parse-rate-con returned no prefill')
   return { prefill: res.prefill, usage: res.usage ?? { input: 0, output: 0, cache_read: 0, cache_write: 0 } }
+}
+
+// Expand a Supabase FunctionsHttpError into something the UI can
+// actually surface — the default message ("Edge Function returned a
+// non-2xx status code") hides the response body where the real
+// reason lives.
+async function expandFunctionError(error: unknown, fn: string): Promise<Error> {
+  const e = error as { message?: string; context?: Response }
+  let detail = e?.message || `${fn} error`
+  try {
+    const body = e.context ? await e.context.text() : ''
+    if (body) detail += ` — ${body.slice(0, 300)}`
+  } catch { /* ignore */ }
+  console.error(`${fn} error:`, error, detail)
+  return new Error(detail)
 }
 
 // ── Receipt (expense) parser ────────────────────────────────────────────────
@@ -85,7 +100,7 @@ export async function parseReceipt(
   const { data, error } = await supabase.functions.invoke('parse-receipt', {
     body: { image, mime_type: mimeType },
   })
-  if (error) throw new Error(error.message)
+  if (error) throw await expandFunctionError(error, 'parse-receipt')
   const res = data as { prefill?: ReceiptPrefill; usage?: RateConUsage; error?: string }
   if (res?.error) throw new Error(res.error)
   if (!res?.prefill) throw new Error('parse-receipt returned no prefill')
@@ -119,10 +134,9 @@ export async function checkBroker(query: { mc?: string; dot?: string }): Promise
   const mc  = (query.mc  ?? '').replace(/\D/g, '')
   const dot = (query.dot ?? '').replace(/\D/g, '')
   if (!mc && !dot) throw new Error('MC# or DOT# required')
-  const { data, error } = await supabase.functions.invoke('check-broker', {
-    body: mc ? { mc_number: mc } : { dot_number: dot },
-  })
-  if (error) throw new Error(error.message)
+  const payload = mc ? { mc_number: mc } : { dot_number: dot }
+  const { data, error } = await supabase.functions.invoke('check-broker', { body: payload })
+  if (error) throw await expandFunctionError(error, 'check-broker')
   const res = data as { snapshot?: BrokerSnapshot; error?: string }
   if (res?.error) throw new Error(res.error)
   if (!res?.snapshot) throw new Error('check-broker returned no snapshot')
