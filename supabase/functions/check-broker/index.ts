@@ -43,7 +43,7 @@ Deno.serve(async (req) => {
   // Callers discriminate on the body shape.
   if (req.method !== 'POST') return json({ error: 'POST required' })
 
-  let body: { mc_number?: string; dot_number?: string }
+  let body: { mc_number?: string; dot_number?: string; debug?: boolean }
   try {
     body = await req.json()
   } catch {
@@ -52,6 +52,7 @@ Deno.serve(async (req) => {
 
   const mc  = (body.mc_number  ?? '').replace(/\D/g, '')
   const dot = (body.dot_number ?? '').replace(/\D/g, '')
+  const debug = body.debug === true
   if (!mc && !dot) return json({ error: 'mc_number or dot_number required' })
 
   // SAFER carrier snapshot. The form that drives this page uses POST, not
@@ -82,13 +83,21 @@ Deno.serve(async (req) => {
     }
     const html = await res.text()
 
-    // SAFER shows "Record Not Found" or "Record Inactive" when the
-    // MC/DOT doesn't resolve to a live carrier.
+    // Debug mode — returns an 8k slice of the raw HTML so we can see
+    // exactly what SAFER sent and fix the parser. Call with
+    // { "mc_number": "...", "debug": true } from the Test panel.
+    if (debug) {
+      return json({
+        html_length: html.length,
+        contains_legal_name_label: /Legal Name/i.test(html),
+        contains_record_not_found: /Record Not Found/i.test(html),
+        html_preview: html.slice(0, 8000),
+      })
+    }
+
     if (/Record Not Found/i.test(html)) {
       return json({ error: 'No FMCSA record for that MC/DOT number' })
     }
-    // If we didn't get the snapshot markup at all, hand back a tiny slice
-    // of the response so the client can see what SAFER actually sent.
     if (!/Legal Name/i.test(html)) {
       const preview = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200)
       return json({ error: `SAFER returned an unexpected page: ${preview || '(empty)'}` })
