@@ -212,7 +212,11 @@ function deriveRiskFlags(s: BrokerSnapshot): string[] {
 
 function cleanText(raw: string): string | null {
   const stripped = raw
-    .replace(/<[^>]+>/g, ' ')    // strip inner tags
+    // Drop entire <A>…</A> blocks first — some SAFER TD cells append a
+    // "click here for details" link to the real value, and we don't
+    // want that helper text bleeding into the output.
+    .replace(/<A\b[^>]*>[\s\S]*?<\/A>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
     .replace(/&nbsp;/gi, ' ')
     .replace(/&amp;/gi, '&')
     .replace(/\s+/g, ' ')
