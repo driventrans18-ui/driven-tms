@@ -84,8 +84,8 @@ function Shell({ tab, setTab, userId, email }: {
       <main
         className="flex-1 overflow-y-auto px-4"
         style={{
-          paddingTop: 'calc(env(safe-area-inset-top, 0) + 8px)',
-          paddingBottom: '32px',
+          paddingTop: 'env(safe-area-inset-top, 0px)',
+          paddingBottom: '12px',
         }}
       >
         {tab === 'home'     && <Home driver={driver} onGoToLoads={() => setTab('loads')} onOpenDriverMode={() => setDriverModeOpen(true)} />}
@@ -99,7 +99,7 @@ function Shell({ tab, setTab, userId, email }: {
         <div className="fixed inset-0 z-50 flex flex-col" style={{ background: 'var(--color-surface-bg)' }}>
           <header
             className="px-4 pb-3 flex items-center justify-between shrink-0"
-            style={{ paddingTop: 'calc(env(safe-area-inset-top, 0) + 8px)' }}
+            style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
           >
             <h1 className="text-2xl font-bold text-gray-900">Brokers</h1>
             <button onClick={() => setBrokersOpen(false)} className="text-[var(--color-brand-500)] text-base font-medium cursor-pointer">Done</button>
@@ -113,7 +113,7 @@ function Shell({ tab, setTab, userId, email }: {
         <div className="fixed inset-0 z-50 flex flex-col" style={{ background: 'var(--color-surface-bg)' }}>
           <header
             className="px-4 pb-3 flex items-center justify-between shrink-0"
-            style={{ paddingTop: 'calc(env(safe-area-inset-top, 0) + 8px)' }}
+            style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
           >
             <h1 className="text-2xl font-bold text-gray-900">Customers</h1>
             <button onClick={() => setCustomersOpen(false)} className="text-[var(--color-brand-500)] text-base font-medium cursor-pointer">Done</button>

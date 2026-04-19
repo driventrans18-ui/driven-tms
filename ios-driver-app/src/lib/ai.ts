@@ -142,3 +142,22 @@ export async function checkBroker(query: { mc?: string; dot?: string }): Promise
   if (!res?.snapshot) throw new Error('check-broker returned no snapshot')
   return res.snapshot
 }
+
+export interface BrokerNameCandidate {
+  legal_name: string
+  dot_number: string | null
+  location:   string | null
+}
+
+// Search FMCSA SAFER by company name. Returns a list of candidates the UI
+// can show in a picker; the user taps one and we re-query by DOT # to get
+// the full snapshot (via checkBroker).
+export async function searchBrokerByName(name: string): Promise<BrokerNameCandidate[]> {
+  const q = name.trim()
+  if (q.length < 2) throw new Error('Enter at least 2 characters')
+  const { data, error } = await supabase.functions.invoke('check-broker', { body: { name: q } })
+  if (error) throw await expandFunctionError(error, 'check-broker')
+  const res = data as { candidates?: BrokerNameCandidate[]; error?: string }
+  if (res?.error) throw new Error(res.error)
+  return res.candidates ?? []
+}
