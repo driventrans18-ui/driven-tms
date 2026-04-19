@@ -548,17 +548,33 @@ function AddFuelSheet({ loadId, onClose }: { loadId: string | null; onClose: () 
 function CarrierLookupSheet({ onClose }: { onClose: () => void }) {
   const qc = useQueryClient()
   const [query, setQuery] = useState('')
-  const [mode, setMode] = useState<'mc' | 'dot'>('mc')
+  const [mode, setMode] = useState<'mc' | 'dot' | 'name'>('mc')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [snap, setSnap] = useState<import('../lib/ai').BrokerSnapshot | null>(null)
+  const [candidates, setCandidates] = useState<import('../lib/ai').BrokerNameCandidate[] | null>(null)
   const [saving, setSaving] = useState<'broker' | 'customer' | null>(null)
   const [savedAs, setSavedAs] = useState<'broker' | 'customer' | null>(null)
 
   async function runLookup() {
+    setError(null); setSnap(null); setSavedAs(null); setCandidates(null)
+    if (mode === 'name') {
+      const q = query.trim()
+      if (q.length < 2) { setError('Enter at least 2 characters of the company name'); return }
+      setBusy(true)
+      try {
+        const { searchBrokerByName } = await import('../lib/ai')
+        const list = await searchBrokerByName(q)
+        if (list.length === 0) setError('No FMCSA matches for that name')
+        setCandidates(list)
+      } catch (e) {
+        setError((e as Error).message)
+      } finally { setBusy(false) }
+      return
+    }
     const digits = query.replace(/\D/g, '')
     if (!digits) { setError('Enter an MC# or DOT#'); return }
-    setBusy(true); setError(null); setSnap(null); setSavedAs(null)
+    setBusy(true)
     try {
       const { checkBroker } = await import('../lib/ai')
       const s = await checkBroker(mode === 'mc' ? { mc: digits } : { dot: digits })
@@ -568,6 +584,19 @@ function CarrierLookupSheet({ onClose }: { onClose: () => void }) {
     } finally {
       setBusy(false)
     }
+  }
+
+  // User picked a candidate from the name-search results — pull the full
+  // snapshot by DOT # so they can review and save.
+  async function pickCandidate(dot: string) {
+    setBusy(true); setError(null); setSnap(null); setCandidates(null)
+    try {
+      const { checkBroker } = await import('../lib/ai')
+      const s = await checkBroker({ dot })
+      setSnap(s)
+    } catch (e) {
+      setError((e as Error).message)
+    } finally { setBusy(false) }
   }
 
   // Persist the looked-up carrier as a broker or customer record. We pull
@@ -616,14 +645,14 @@ function CarrierLookupSheet({ onClose }: { onClose: () => void }) {
           <button onClick={onClose} className="text-gray-400 text-lg cursor-pointer">✕</button>
         </div>
 
-        <div className="grid grid-cols-2 gap-1 bg-gray-100 rounded-xl p-1 mb-3">
-          {(['mc', 'dot'] as const).map(k => {
+        <div className="grid grid-cols-3 gap-1 bg-gray-100 rounded-xl p-1 mb-3">
+          {(['mc', 'dot', 'name'] as const).map(k => {
             const on = mode === k
             return (
-              <button key={k} onClick={() => setMode(k)}
+              <button key={k} onClick={() => { setMode(k); setQuery(''); setCandidates(null); setSnap(null); setError(null) }}
                 className="py-2 rounded-lg text-sm font-semibold cursor-pointer"
                 style={on ? { background: 'var(--color-brand-500)', color: 'white' } : { color: '#6b7280' }}>
-                {k === 'mc' ? 'MC number' : 'DOT number'}
+                {k === 'mc' ? 'MC #' : k === 'dot' ? 'DOT #' : 'Name'}
               </button>
             )
           })}
@@ -634,18 +663,38 @@ function CarrierLookupSheet({ onClose }: { onClose: () => void }) {
             value={query}
             onChange={e => setQuery(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') runLookup() }}
-            placeholder={mode === 'mc' ? 'e.g. 090949' : 'e.g. 3126831'}
-            inputMode="numeric"
+            placeholder={mode === 'mc' ? 'e.g. 090949' : mode === 'dot' ? 'e.g. 3126831' : 'Acme Freight'}
+            inputMode={mode === 'name' ? 'text' : 'numeric'}
             className="flex-1 px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-base"
           />
           <button type="button" onClick={runLookup} disabled={busy || !query.trim()}
             className="px-5 py-3 rounded-xl text-white text-base font-semibold disabled:opacity-60 cursor-pointer"
             style={{ background: 'var(--color-brand-500)' }}>
-            {busy ? '…' : 'Verify'}
+            {busy ? '…' : mode === 'name' ? 'Search' : 'Verify'}
           </button>
         </div>
 
         {error && <p className="mt-3 text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
+
+        {candidates && candidates.length > 0 && (
+          <div className="mt-3">
+            <p className="text-xs text-gray-500 mb-2">Tap a match to load full details</p>
+            <ul className="space-y-2 max-h-80 overflow-y-auto">
+              {candidates.map(c => (
+                <li key={c.dot_number ?? c.legal_name}>
+                  <button onClick={() => c.dot_number && pickCandidate(c.dot_number)}
+                    disabled={!c.dot_number || busy}
+                    className="w-full text-left bg-gray-50 rounded-xl p-3 active:bg-gray-100 cursor-pointer disabled:opacity-50">
+                    <p className="text-sm font-semibold text-gray-900 truncate">{c.legal_name}</p>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      {c.dot_number ? `DOT# ${c.dot_number}` : '—'}{c.location ? ` · ${c.location}` : ''}
+                    </p>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         {snap && (
           <div className="mt-4 space-y-3">

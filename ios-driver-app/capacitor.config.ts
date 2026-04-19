@@ -9,6 +9,10 @@ const config: CapacitorConfig = {
     // runs under the dynamic island and home indicator. The React shell uses
     // env(safe-area-inset-*) to keep content clear of those regions.
     contentInset: 'never',
+    // Pin the native window background so the status bar and home-indicator
+    // regions never flash black during load or while the keyboard animates.
+    // Matches --color-surface-bg in light mode; dark mode repaints via CSS.
+    backgroundColor: '#F4F6F8',
   },
   plugins: {
     LocalNotifications: {

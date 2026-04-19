@@ -43,17 +43,31 @@ Deno.serve(async (req) => {
   // Callers discriminate on the body shape.
   if (req.method !== 'POST') return json({ error: 'POST required' })
 
-  let body: { mc_number?: string; dot_number?: string; debug?: boolean }
+  let body: { mc_number?: string; dot_number?: string; name?: string; debug?: boolean }
   try {
     body = await req.json()
   } catch {
     return json({ error: 'invalid JSON body' })
   }
 
-  const mc  = (body.mc_number  ?? '').replace(/\D/g, '')
-  const dot = (body.dot_number ?? '').replace(/\D/g, '')
+  const mc   = (body.mc_number  ?? '').replace(/\D/g, '')
+  const dot  = (body.dot_number ?? '').replace(/\D/g, '')
+  const name = (body.name ?? '').trim()
   const debug = body.debug === true
-  if (!mc && !dot) return json({ error: 'mc_number or dot_number required' })
+  if (!mc && !dot && !name) return json({ error: 'mc_number, dot_number, or name required' })
+
+  // Name search returns a list of candidates (DOT #, legal name, location)
+  // so the driver can pick the right carrier. Snapshot details come from
+  // a follow-up lookup by DOT#.
+  if (name && !mc && !dot) {
+    try {
+      const candidates = await searchByName(name)
+      return json({ candidates })
+    } catch (e) {
+      console.error('check-broker name search error:', e)
+      return json({ error: e instanceof Error ? e.message : 'name search failed' })
+    }
+  }
 
   // SAFER carrier snapshot. The form that drives this page uses POST, not
   // GET — a GET returns a redirect/landing page, not the snapshot. Either
@@ -243,4 +257,58 @@ function cleanText(raw: string): string | null {
 
 function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+interface NameCandidate {
+  legal_name:  string
+  dot_number:  string | null
+  location:    string | null   // e.g. "DALLAS, TX"
+}
+
+// SAFER company-name search. Accepts a partial/full company name, returns
+// a list of {legal_name, dot_number, location} candidates the UI can show
+// in a picker. The user then picks one and we re-query by DOT# for the
+// full snapshot via the existing queryCarrierSnapshot branch.
+async function searchByName(name: string): Promise<NameCandidate[]> {
+  const form = new URLSearchParams({
+    searchtype:   'ANY',
+    query_type:   'queryCarrierName',
+    query_param:  'NAME',
+    query_string: name,
+  })
+  const res = await fetch('https://safer.fmcsa.dot.gov/query.asp', {
+    method: 'POST',
+    headers: {
+      'User-Agent':    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15',
+      'Accept':        'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      'Content-Type':  'application/x-www-form-urlencoded',
+      'Referer':       'https://safer.fmcsa.dot.gov/CompanySnapshot.aspx',
+    },
+    body: form.toString(),
+  })
+  if (!res.ok) throw new Error(`SAFER returned ${res.status}`)
+  const html = await res.text()
+  if (/Record Not Found/i.test(html) || /No records? match/i.test(html)) return []
+
+  // SAFER's name-results page lists each match as:
+  //   <a href="query.asp?...query_param=USDOT&query_string=XXXXXX">NAME</a>
+  //   …<b>DOT#: NNNNNN</b>  …CITY, ST
+  // We parse by iterating anchors whose href includes query_param=USDOT and
+  // whose context contains the DOT # + a CITY, ST blob.
+  const anchorRe = /<a[^>]+href="[^"]*query_param=USDOT&amp;query_string=(\d+)[^"]*"[^>]*>([^<]+)<\/a>/gi
+  const seen = new Set<string>()
+  const out: NameCandidate[] = []
+  let m: RegExpExecArray | null
+  while ((m = anchorRe.exec(html)) !== null) {
+    const dot = m[1]
+    if (seen.has(dot)) continue
+    seen.add(dot)
+    const legal = cleanText(m[2]) ?? ''
+    // Look ~400 chars after the anchor for a CITY, ST pattern.
+    const after = html.slice(m.index, m.index + 600)
+    const loc = after.match(/>\s*([A-Z][A-Z\s.&'-]{1,40},\s*[A-Z]{2})\s*</)?.[1] ?? null
+    out.push({ legal_name: legal, dot_number: dot, location: loc })
+    if (out.length >= 25) break
+  }
+  return out
 }
