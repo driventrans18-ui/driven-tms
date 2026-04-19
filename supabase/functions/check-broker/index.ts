@@ -61,8 +61,8 @@ Deno.serve(async (req) => {
   // a follow-up lookup by DOT#.
   if (name && !mc && !dot) {
     try {
-      const candidates = await searchByName(name)
-      return json({ candidates })
+      const result = await searchByName(name, debug)
+      return json(result)
     } catch (e) {
       console.error('check-broker name search error:', e)
       return json({ error: e instanceof Error ? e.message : 'name search failed' })
@@ -269,28 +269,55 @@ interface NameCandidate {
 // a list of {legal_name, dot_number, location} candidates the UI can show
 // in a picker. The user then picks one and we re-query by DOT# for the
 // full snapshot via the existing queryCarrierSnapshot branch.
-async function searchByName(name: string): Promise<NameCandidate[]> {
-  // SAFER's public name search lives at keywordx.asp. It expects the search
-  // term wrapped in asterisks (e.g. *walmart*) as a POST form field called
-  // `searchstring`. The query.asp endpoint does NOT do name search despite
-  // accepting a NAME query_param — that's for internal admin use.
-  const form = new URLSearchParams({
-    searchstring: `*${name.replace(/\*/g, '')}*`,
-    SEARCHTYPE:   'NAME',
-  })
-  const res = await fetch('https://safer.fmcsa.dot.gov/keywordx.asp', {
-    method: 'POST',
-    headers: {
-      'User-Agent':    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15',
-      'Accept':        'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-      'Content-Type':  'application/x-www-form-urlencoded',
-      'Referer':       'https://safer.fmcsa.dot.gov/CompanySnapshot.aspx',
-    },
-    body: form.toString(),
-  })
-  if (!res.ok) throw new Error(`SAFER returned ${res.status}`)
-  const html = await res.text()
-  if (/No records? match|Record Not Found|Too many records/i.test(html)) return []
+async function searchByName(name: string, debug = false): Promise<{ candidates: NameCandidate[]; diagnostic?: Record<string, unknown> }> {
+  const clean = name.replace(/\*/g, '').trim()
+  // Try multiple SAFER form shapes in order — the public keyword search
+  // form has changed over the years and Deno's fetch doesn't automatically
+  // follow the same redirects browsers do. We stop at the first attempt
+  // that yields parse-able results.
+  const attempts: Array<{ url: string; body: URLSearchParams; label: string }> = [
+    { label: 'keywordx_searchtype_empty', url: 'https://safer.fmcsa.dot.gov/keywordx.asp', body: new URLSearchParams({ searchstring: `*${clean}*`, SEARCHTYPE: '' }) },
+    { label: 'keywordx_searchtype_name',  url: 'https://safer.fmcsa.dot.gov/keywordx.asp', body: new URLSearchParams({ searchstring: `*${clean}*`, SEARCHTYPE: 'NAME' }) },
+    { label: 'keywordx_no_wildcards',     url: 'https://safer.fmcsa.dot.gov/keywordx.asp', body: new URLSearchParams({ searchstring: clean,         SEARCHTYPE: '' }) },
+  ]
+
+  const diagnostic: Record<string, unknown> = { attempts: [] }
+  for (const a of attempts) {
+    const res = await fetch(a.url, {
+      method: 'POST',
+      headers: {
+        'User-Agent':    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15',
+        'Accept':        'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Content-Type':  'application/x-www-form-urlencoded',
+        'Referer':       'https://safer.fmcsa.dot.gov/CompanySnapshot.aspx',
+      },
+      body: a.body.toString(),
+      redirect: 'follow',
+    })
+    const html = await res.text()
+    const attemptInfo = {
+      label: a.label,
+      status: res.status,
+      html_length: html.length,
+      contains_record_not_found: /Record Not Found|No records? match/i.test(html),
+      contains_too_many: /Too many records/i.test(html),
+      contains_usdot_link: /query_param=USDOT/i.test(html),
+      title: html.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1]?.trim() ?? null,
+      preview: html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 300),
+    }
+    ;(diagnostic.attempts as unknown[]).push(attemptInfo)
+    if (!res.ok) continue
+    if (/Record Not Found|No records? match|Too many records/i.test(html)) continue
+
+    const parsed = parseNameResults(html)
+    if (parsed.length > 0) {
+      return debug ? { candidates: parsed, diagnostic } : { candidates: parsed }
+    }
+  }
+  return debug ? { candidates: [], diagnostic } : { candidates: [] }
+}
+
+function parseNameResults(html: string): NameCandidate[] {
 
   // Results row pattern on keywordx.asp looks like:
   //   <a href="query.asp?searchtype=ANY&query_type=queryCarrierSnapshot&
