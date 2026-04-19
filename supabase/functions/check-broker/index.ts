@@ -145,15 +145,22 @@ function json(body: unknown, status = 200) {
 // all of SAFER's quirks.
 function parseSnapshot(html: string): BrokerSnapshot {
   const findValue = (label: string): string | null => {
-    // Find the label inside a tag closing. ">Legal Name:" appears right
-    // before the TH closes on the snapshot page. Searching just for the
-    // text "Legal Name" matches the form's option list too.
-    const needle = new RegExp(`>\\s*${escapeRegex(label)}\\s*:?\\s*<`, 'i')
-    const m = needle.exec(html)
-    if (!m) return null
-    const after = m.index + m[0].length
-    // Find the next <TD ...>…</TD> after the label.
-    const tdOpen = html.indexOf('<TD', after)
+    // Prefer a strict <TH>Label:</TH><TD>value</TD> match — that's what
+    // the main data table uses, and it avoids false matches against the
+    // JavaScript at the top of the page and the carrier-info header.
+    const strict = new RegExp(
+      `<TH[^>]*>\\s*${escapeRegex(label)}\\s*:?\\s*</TH>\\s*<TD[^>]*>([\\s\\S]*?)</TD>`,
+      'i',
+    )
+    const sm = strict.exec(html)
+    if (sm) return cleanText(sm[1])
+
+    // Fall back to tolerant lookup only if the strict TH/TD pair missed
+    // (some SAFER layouts wrap the label in extra tags).
+    const loose = new RegExp(`>\\s*${escapeRegex(label)}\\s*:?\\s*<`, 'i')
+    const lm = loose.exec(html)
+    if (!lm) return null
+    const tdOpen = html.indexOf('<TD', lm.index + lm[0].length)
     if (tdOpen === -1) return null
     const tdContentStart = html.indexOf('>', tdOpen) + 1
     const tdClose = html.indexOf('</TD>', tdContentStart)
@@ -166,12 +173,13 @@ function parseSnapshot(html: string): BrokerSnapshot {
   const headerName = html.match(/<B>([A-Z][^<]{2,})<\/B>\s*<br>\s*USDOT Number:/i)?.[1]
   const headerDot  = html.match(/USDOT Number:\s*(\d+)/i)?.[1]
 
-  // OOS rates live in a Safety table. Cells look like:
-  // <TH scope="row">Vehicle</TH><TD>N/A</TD><TD>18.5%</TD>
-  // We want the "%" column. Safer approach: find "Vehicle" or "Driver"
-  // label, then search forward for the first "N.N%" within ~400 chars.
+  // OOS rates live in a Safety table. Row labels look like
+  // <TH scope="row">Vehicle</TH> or <TH ...>Vehicle </TH> (with a trailing
+  // space) or <TH ...>Vehicle Inspections</TH> depending on the carrier.
+  // Look for the label at a word boundary inside a TH, then search
+  // forward for the first "N.N%" within ~600 chars.
   const nearbyPercent = (label: string): number | null => {
-    const labelRe = new RegExp(`>\\s*${escapeRegex(label)}\\s*<`, 'gi')
+    const labelRe = new RegExp(`<TH[^>]*>\\s*${escapeRegex(label)}\\b[^<]*</TH>`, 'gi')
     let match: RegExpExecArray | null
     while ((match = labelRe.exec(html)) !== null) {
       const window = html.slice(match.index, match.index + 600)
