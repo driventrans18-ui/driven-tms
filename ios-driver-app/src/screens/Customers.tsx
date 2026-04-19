@@ -12,6 +12,8 @@ interface Customer {
   email: string | null
   address: string | null
   notes: string | null
+  mc_number: string | null
+  dot_number: string | null
 }
 
 export function Customers() {
@@ -108,6 +110,8 @@ function CustomerSheet({ customer, onClose, onEdit }: { customer: Customer; onCl
           {customer.email && <DetailRow k="Email" v={customer.email} />}
           {customer.phone && <DetailRow k="Phone" v={customer.phone} />}
           {customer.address && <DetailRow k="Address" v={customer.address} />}
+          {customer.mc_number  && <DetailRow k="MC#"  v={customer.mc_number}  />}
+          {customer.dot_number && <DetailRow k="DOT#" v={customer.dot_number} />}
         </dl>
         {customer.notes && (
           <div className="mt-4">
@@ -148,6 +152,8 @@ function CustomerFormSheet({ editing, onClose }: { editing: Customer | null; onC
     phone:        editing?.phone        ?? '',
     email:        editing?.email        ?? '',
     address:      editing?.address      ?? '',
+    mc_number:    editing?.mc_number    ?? '',
+    dot_number:   editing?.dot_number   ?? '',
     notes:        editing?.notes        ?? '',
   })
   const [error, setError] = useState<string | null>(null)
@@ -164,6 +170,8 @@ function CustomerFormSheet({ editing, onClose }: { editing: Customer | null; onC
         phone:        form.phone        || null,
         email:        form.email        || null,
         address:      form.address      || null,
+        mc_number:    form.mc_number    || null,
+        dot_number:   form.dot_number   || null,
         notes:        form.notes        || null,
       }
       const { error } = isEdit && editing
@@ -212,6 +220,16 @@ function CustomerFormSheet({ editing, onClose }: { editing: Customer | null; onC
             <input value={form.address} onChange={e => set('address', e.target.value)} placeholder="123 Main St, City, ST"
               className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-base" />
           </Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="MC#">
+              <input value={form.mc_number} onChange={e => set('mc_number', e.target.value)} placeholder="123456"
+                className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-base" />
+            </Field>
+            <Field label="DOT#">
+              <input value={form.dot_number} onChange={e => set('dot_number', e.target.value)} placeholder="1234567"
+                className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-base" />
+            </Field>
+          </div>
           <Field label="Notes">
             <textarea value={form.notes} onChange={e => set('notes', e.target.value)} rows={3}
               className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-base" />

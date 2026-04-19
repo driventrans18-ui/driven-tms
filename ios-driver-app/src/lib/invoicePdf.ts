@@ -41,6 +41,8 @@ export interface InvoicePdfData {
     email?: string | null
     phone?: string | null
     address?: string | null
+    mc_number?: string | null
+    dot_number?: string | null
   } | null
   lineItems: InvoiceLineItem[]
   totalAmount: number
@@ -164,6 +166,11 @@ export function generateInvoicePdf(data: InvoicePdfData): Blob {
     if (data.billTo.address) billToLines.push(...data.billTo.address.split(/\r?\n/))
     if (data.billTo.email)   billToLines.push(data.billTo.email)
     if (data.billTo.phone)   billToLines.push(data.billTo.phone)
+    const ids = [
+      data.billTo.mc_number  ? `MC# ${data.billTo.mc_number}`   : null,
+      data.billTo.dot_number ? `DOT# ${data.billTo.dot_number}` : null,
+    ].filter(Boolean).join(' · ')
+    if (ids) billToLines.push(ids)
   } else {
     billToLines.push('—')
   }
