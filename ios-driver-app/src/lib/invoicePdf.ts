@@ -46,6 +46,14 @@ export interface InvoicePdfData {
   } | null
   lineItems: InvoiceLineItem[]
   totalAmount: number
+  /** Subtotal before factoring / discount. Defaults to totalAmount + deductions; pass explicitly when the deduction breakdown is nonzero. */
+  subtotal?: number | null
+  /** Factoring fee cut from the subtotal. Rendered as a Totals row when set. */
+  factoring?: { pct: number; amount: number } | null
+  /** Per-invoice discount. Rendered as a Totals row when set. */
+  discount?:  { pct: number; amount: number } | null
+  /** Per-invoice tax (added to subtotal). Rendered as a Totals row when set. */
+  tax?:       { pct: number; amount: number } | null
 }
 
 // jsPDF can't resolve CSS variables — these are baked for the PDF output.
@@ -223,13 +231,53 @@ export function generateInvoicePdf(data: InvoicePdfData): Blob {
   doc.line(pageW - margin - 200, cursorY, pageW - margin, cursorY)
   cursorY += 18
 
+  const labelX = pageW - margin - 200
+  const valueX = pageW - margin
+  // Breakdown rows render only when a deduction applies. Skip the Subtotal
+  // row when there's nothing to deduct so single-line invoices stay clean.
+  const hasBreakdown = !!(data.factoring || data.discount || data.tax)
+  if (hasBreakdown) {
+    const sub = data.subtotal ?? data.totalAmount
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(11)
+    doc.setTextColor(MUTED)
+    doc.text('Subtotal', labelX, cursorY)
+    doc.setTextColor(DARK)
+    doc.text(fmtMoney(sub), valueX, cursorY, { align: 'right' })
+    cursorY += 18
+    if (data.factoring) {
+      doc.setTextColor(MUTED)
+      doc.text(`Factoring (${data.factoring.pct}%)`, labelX, cursorY)
+      doc.setTextColor(DARK)
+      doc.text(`-${fmtMoney(data.factoring.amount)}`, valueX, cursorY, { align: 'right' })
+      cursorY += 18
+    }
+    if (data.discount) {
+      doc.setTextColor(MUTED)
+      doc.text(`Discount (${data.discount.pct}%)`, labelX, cursorY)
+      doc.setTextColor(DARK)
+      doc.text(`-${fmtMoney(data.discount.amount)}`, valueX, cursorY, { align: 'right' })
+      cursorY += 18
+    }
+    if (data.tax) {
+      doc.setTextColor(MUTED)
+      doc.text(`Tax (${data.tax.pct}%)`, labelX, cursorY)
+      doc.setTextColor(DARK)
+      doc.text(fmtMoney(data.tax.amount), valueX, cursorY, { align: 'right' })
+      cursorY += 18
+    }
+    // Separator before the bold Total row so the breakdown reads as a table.
+    doc.setDrawColor(229, 231, 235)
+    doc.line(labelX, cursorY - 6, valueX, cursorY - 6)
+  }
+
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(12)
   doc.setTextColor(MUTED)
-  doc.text('Total', pageW - margin - 200, cursorY)
+  doc.text('Total', labelX, cursorY)
   doc.setTextColor(DARK)
   doc.setFontSize(18)
-  doc.text(fmtMoney(data.totalAmount), pageW - margin, cursorY + 2, { align: 'right' })
+  doc.text(fmtMoney(data.totalAmount), valueX, cursorY + 2, { align: 'right' })
   cursorY += 32
 
   // ── Notes footer ──────────────────────────────────────────────────────────

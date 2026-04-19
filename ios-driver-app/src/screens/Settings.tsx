@@ -8,21 +8,24 @@ import { supabase } from '../lib/supabase'
 // the "From" block of generated invoices.
 
 interface CompanyInfo {
-  company_name: string | null
-  address:      string | null
-  city:         string | null
-  state:        string | null
-  zip:          string | null
-  phone:        string | null
-  email:        string | null
-  mc_number:    string | null
-  dot_number:   string | null
-  ein:          string | null
+  company_name:      string | null
+  address:           string | null
+  city:              string | null
+  state:             string | null
+  zip:               string | null
+  phone:             string | null
+  email:             string | null
+  mc_number:         string | null
+  dot_number:        string | null
+  ein:               string | null
+  factoring_enabled: boolean
+  factoring_pct:     number | null
 }
 
 const EMPTY_COMPANY: CompanyInfo = {
   company_name: '', address: '', city: '', state: '', zip: '',
   phone: '', email: '', mc_number: '', dot_number: '', ein: '',
+  factoring_enabled: false, factoring_pct: null,
 }
 
 export function Settings({ onClose }: { onClose: () => void }) {
@@ -105,7 +108,7 @@ function CompanyInfoSection() {
     queryKey: ['company-settings'],
     queryFn: async () => {
       const { data, error } = await supabase.from('company_settings')
-        .select('company_name, address, city, state, zip, phone, email, mc_number, dot_number, ein')
+        .select('company_name, address, city, state, zip, phone, email, mc_number, dot_number, ein, factoring_enabled, factoring_pct')
         .limit(1).maybeSingle()
       if (error) throw error
       return (data ?? EMPTY_COMPANY) as CompanyInfo
@@ -124,17 +127,20 @@ function CompanyInfoSection() {
 
   const save = useMutation({
     mutationFn: async () => {
+      const pctNum = form.factoring_pct
       const payload = {
-        company_name: form.company_name?.trim() || null,
-        address:      form.address?.trim()      || null,
-        city:         form.city?.trim()         || null,
-        state:        form.state?.trim()        || null,
-        zip:          form.zip?.trim()          || null,
-        phone:        form.phone?.trim()        || null,
-        email:        form.email?.trim()        || null,
-        mc_number:    form.mc_number?.trim()    || null,
-        dot_number:   form.dot_number?.trim()   || null,
-        ein:          form.ein?.trim()          || null,
+        company_name:      form.company_name?.trim() || null,
+        address:           form.address?.trim()      || null,
+        city:              form.city?.trim()         || null,
+        state:             form.state?.trim()        || null,
+        zip:               form.zip?.trim()          || null,
+        phone:             form.phone?.trim()        || null,
+        email:             form.email?.trim()        || null,
+        mc_number:         form.mc_number?.trim()    || null,
+        dot_number:        form.dot_number?.trim()   || null,
+        ein:               form.ein?.trim()          || null,
+        factoring_enabled: form.factoring_enabled,
+        factoring_pct:     pctNum != null && Number.isFinite(pctNum) ? pctNum : null,
       }
       // The table stores a single row; update the only one if it
       // exists, otherwise insert a fresh row. Filter `id is not null`
@@ -173,6 +179,41 @@ function CompanyInfoSection() {
           <Field label="DOT#" value={form.dot_number ?? ''} onChange={v => set('dot_number', v)} placeholder="3126831" />
         </div>
         <Field label="EIN" value={form.ein ?? ''} onChange={v => set('ein', v)} placeholder="12-3456789" />
+
+        {/* Factoring — global toggle + editable rate. Applies on every
+            generated invoice when enabled; the PDF renders the cut as
+            a dedicated line in the totals block. */}
+        <div className="pt-2 mt-2 border-t border-gray-100">
+          <label className="flex items-center justify-between py-2 cursor-pointer">
+            <span>
+              <span className="block text-sm font-medium text-gray-900">Factoring deduction</span>
+              <span className="block text-xs text-gray-500 mt-0.5">Show a factor cut on every invoice</span>
+            </span>
+            <input
+              type="checkbox"
+              checked={form.factoring_enabled}
+              onChange={e => setForm(f => ({ ...f, factoring_enabled: e.target.checked }))}
+              className="w-5 h-5 cursor-pointer accent-[color:var(--color-brand-500)]"
+            />
+          </label>
+          {form.factoring_enabled && (
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Factoring rate (%)</label>
+              <input
+                type="number"
+                inputMode="decimal"
+                step="0.01"
+                value={form.factoring_pct ?? ''}
+                onChange={e => {
+                  const v = e.target.value
+                  setForm(f => ({ ...f, factoring_pct: v === '' ? null : Number(v) }))
+                }}
+                placeholder="1.5"
+                className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-base"
+              />
+            </div>
+          )}
+        </div>
 
         {save.isError && (
           <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">
