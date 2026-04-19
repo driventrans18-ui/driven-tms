@@ -72,8 +72,7 @@ export async function parseRateCon(
     body.images = input.images
     body.mime_type = input.mimeType ?? 'image/jpeg'
   }
-  const { data, error } = await supabase.functions.invoke('parse-rate-con', { body })
-  if (error) throw await expandFunctionError(error, 'parse-rate-con')
+  const data = await invokeWithJwtRetry<unknown>('parse-rate-con', body)
   const res = data as { prefill?: RateConPrefill; usage?: RateConUsage; error?: string }
   if (res?.error) throw new Error(res.error)
   if (!res?.prefill) throw new Error('parse-rate-con returned no prefill')
@@ -86,15 +85,42 @@ export async function parseRateCon(
 // actually surface — the default message ("Edge Function returned a
 // non-2xx status code") hides the response body where the real
 // reason lives.
-async function expandFunctionError(error: unknown, fn: string): Promise<Error> {
+async function expandFunctionError(error: unknown, fn: string, rawBody?: string): Promise<Error> {
   const e = error as { message?: string; context?: Response }
   let detail = e?.message || `${fn} error`
-  try {
-    const body = e.context ? await e.context.text() : ''
-    if (body) detail += ` — ${body.slice(0, 300)}`
-  } catch { /* ignore */ }
+  const body = rawBody ?? await readErrorBody(error)
+  if (body) detail += ` — ${body.slice(0, 300)}`
   console.error(`${fn} error:`, error, detail)
   return new Error(detail)
+}
+
+async function readErrorBody(error: unknown): Promise<string> {
+  const e = error as { context?: Response }
+  if (!e?.context) return ''
+  try { return await e.context.clone().text() } catch { return '' }
+}
+
+// Supabase's edge runtime rejects access_tokens signed under the old JWT
+// signing key with `UNAUTHORIZED_LEGACY_JWT`. A stored session from before
+// the project rotated keys will still pass database RLS checks but fails
+// every edge function. Refreshing the session mints a new token signed by
+// the current key; if refresh itself fails the user needs to re-auth.
+async function invokeWithJwtRetry<T>(fn: string, body: unknown): Promise<T> {
+  let r = await supabase.functions.invoke(fn, { body })
+  if (r.error) {
+    const raw = await readErrorBody(r.error)
+    if (raw.includes('UNAUTHORIZED_LEGACY_JWT')) {
+      const { error: refreshErr } = await supabase.auth.refreshSession()
+      if (refreshErr) {
+        throw new Error('Session expired — sign out from Profile and sign in again.')
+      }
+      r = await supabase.functions.invoke(fn, { body })
+      if (r.error) throw await expandFunctionError(r.error, fn)
+    } else {
+      throw await expandFunctionError(r.error, fn, raw)
+    }
+  }
+  return r.data as T
 }
 
 // ── Receipt (expense) parser ────────────────────────────────────────────────
@@ -117,10 +143,7 @@ export async function parseReceipt(
   mimeType = 'image/jpeg',
 ): Promise<{ prefill: ReceiptPrefill; usage: RateConUsage }> {
   if (!image) throw new Error('Image required')
-  const { data, error } = await supabase.functions.invoke('parse-receipt', {
-    body: { image, mime_type: mimeType },
-  })
-  if (error) throw await expandFunctionError(error, 'parse-receipt')
+  const data = await invokeWithJwtRetry<unknown>('parse-receipt', { image, mime_type: mimeType })
   const res = data as { prefill?: ReceiptPrefill; usage?: RateConUsage; error?: string }
   if (res?.error) throw new Error(res.error)
   if (!res?.prefill) throw new Error('parse-receipt returned no prefill')
@@ -157,8 +180,7 @@ export async function checkBroker(query: { mc?: string; dot?: string }): Promise
   const dot = (query.dot ?? '').replace(/\D/g, '')
   if (!mc && !dot) throw new Error('MC# or DOT# required')
   const payload = mc ? { mc_number: mc } : { dot_number: dot }
-  const { data, error } = await supabase.functions.invoke('check-broker', { body: payload })
-  if (error) throw await expandFunctionError(error, 'check-broker')
+  const data = await invokeWithJwtRetry<unknown>('check-broker', payload)
   const res = data as { snapshot?: BrokerSnapshot; error?: string }
   if (res?.error) throw new Error(res.error)
   if (!res?.snapshot) throw new Error('check-broker returned no snapshot')
@@ -177,8 +199,7 @@ export interface BrokerNameCandidate {
 export async function searchBrokerByName(name: string): Promise<BrokerNameCandidate[]> {
   const q = name.trim()
   if (q.length < 2) throw new Error('Enter at least 2 characters')
-  const { data, error } = await supabase.functions.invoke('check-broker', { body: { name: q } })
-  if (error) throw await expandFunctionError(error, 'check-broker')
+  const data = await invokeWithJwtRetry<unknown>('check-broker', { name: q })
   const res = data as { candidates?: BrokerNameCandidate[]; error?: string }
   if (res?.error) throw new Error(res.error)
   return res.candidates ?? []
@@ -203,14 +224,11 @@ export async function draftBrokerEmail(args: {
   loadId:        string
   extraContext?: string
 }): Promise<{ draft: BrokerEmailDraft; usage: RateConUsage }> {
-  const { data, error } = await supabase.functions.invoke('draft-broker-email', {
-    body: {
-      intent:        args.intent,
-      load_id:       args.loadId,
-      extra_context: args.extraContext ?? '',
-    },
+  const data = await invokeWithJwtRetry<unknown>('draft-broker-email', {
+    intent:        args.intent,
+    load_id:       args.loadId,
+    extra_context: args.extraContext ?? '',
   })
-  if (error) throw await expandFunctionError(error, 'draft-broker-email')
   const res = data as {
     subject?: string; body?: string; broker_email?: string | null
     usage?: RateConUsage; error?: string
@@ -248,14 +266,11 @@ export async function draftLoadMessage(args: {
   format:        LoadMessageFormat
   extraContext?: string
 }): Promise<{ draft: LoadMessageDraft; usage: RateConUsage }> {
-  const { data, error } = await supabase.functions.invoke('draft-load-message', {
-    body: {
-      load_id:       args.loadId,
-      format:        args.format,
-      extra_context: args.extraContext ?? '',
-    },
+  const data = await invokeWithJwtRetry<unknown>('draft-load-message', {
+    load_id:       args.loadId,
+    format:        args.format,
+    extra_context: args.extraContext ?? '',
   })
-  if (error) throw await expandFunctionError(error, 'draft-load-message')
   const res = data as {
     format?: LoadMessageFormat
     subject?: string | null; body?: string | null; notes?: string | null
@@ -307,10 +322,7 @@ export interface LoadAnalysis {
 export async function analyzeLoad(
   loadId: string,
 ): Promise<{ analysis: LoadAnalysis; usage: RateConUsage }> {
-  const { data, error } = await supabase.functions.invoke('analyze-load', {
-    body: { load_id: loadId },
-  })
-  if (error) throw await expandFunctionError(error, 'analyze-load')
+  const data = await invokeWithJwtRetry<unknown>('analyze-load', { load_id: loadId })
   const res = data as { analysis?: LoadAnalysis; usage?: RateConUsage; error?: string }
   if (res?.error) throw new Error(res.error)
   if (!res?.analysis) throw new Error('analyze-load returned no analysis')
@@ -329,10 +341,7 @@ export async function polishNote(args: {
 }): Promise<{ polished: string; usage: RateConUsage }> {
   const raw = args.rawText.trim()
   if (!raw) throw new Error('Nothing to polish')
-  const { data, error } = await supabase.functions.invoke('polish-note', {
-    body: { raw_text: raw, kind: args.kind },
-  })
-  if (error) throw await expandFunctionError(error, 'polish-note')
+  const data = await invokeWithJwtRetry<unknown>('polish-note', { raw_text: raw, kind: args.kind })
   const res = data as { polished?: string; usage?: RateConUsage; error?: string }
   if (res?.error) throw new Error(res.error)
   if (!res?.polished) throw new Error('polish-note returned no result')
