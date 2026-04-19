@@ -38,22 +38,21 @@ interface BrokerSnapshot {
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: CORS_HEADERS })
-  if (req.method !== 'POST') {
-    return new Response('Method not allowed', { status: 405, headers: CORS_HEADERS })
-  }
+  // The Supabase functions client throws on any non-2xx and swallows the
+  // body, so we always return 200 and put any error text in `{ error }`.
+  // Callers discriminate on the body shape.
+  if (req.method !== 'POST') return json({ error: 'POST required' })
 
   let body: { mc_number?: string; dot_number?: string }
   try {
     body = await req.json()
   } catch {
-    return json({ error: 'invalid JSON body' }, 400)
+    return json({ error: 'invalid JSON body' })
   }
 
   const mc  = (body.mc_number  ?? '').replace(/\D/g, '')
   const dot = (body.dot_number ?? '').replace(/\D/g, '')
-  if (!mc && !dot) {
-    return json({ error: 'mc_number or dot_number required' }, 400)
-  }
+  if (!mc && !dot) return json({ error: 'mc_number or dot_number required' })
 
   // SAFER carrier snapshot. The form that drives this page uses POST, not
   // GET — a GET returns a redirect/landing page, not the snapshot. Either
