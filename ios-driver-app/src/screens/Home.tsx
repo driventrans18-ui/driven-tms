@@ -9,6 +9,9 @@ import { RemindersCard } from '../components/RemindersCard'
 import { LoadCalendar } from '../components/LoadCalendar'
 import { ScreenHeader } from '../components/ScreenHeader'
 import type { Driver } from '../hooks/useDriver'
+import dieselIcon       from '../assets/quick-actions/diesel.png'
+import cameraFreightIcon from '../assets/quick-actions/camerafreight.png'
+import fmcsaIcon         from '../assets/quick-actions/fmcsa.png'
 
 const ACTIVE_STATUSES = ['Assigned', 'In Transit']
 
@@ -274,7 +277,9 @@ export function Home({ driver, onGoToLoads, onOpenDriverMode }: {
             onClick={() => setFuelSheetOpen(true)}
             className="bg-white rounded-2xl p-4 text-left active:bg-gray-50 cursor-pointer flex items-center gap-3"
           >
-            <span className="w-11 h-11 rounded-xl bg-yellow-100 text-yellow-700 flex items-center justify-center text-xl" aria-hidden>⛽</span>
+            <span className="w-11 h-11 flex items-center justify-center shrink-0" aria-hidden>
+              <img src={dieselIcon} alt="" className="w-full h-full object-contain" />
+            </span>
             <span>
               <span className="block text-sm font-semibold text-gray-900">Add Fuel</span>
               <span className="block text-[11px] text-gray-500">Gallons, price, odometer</span>
@@ -286,7 +291,9 @@ export function Home({ driver, onGoToLoads, onOpenDriverMode }: {
             disabled={captureFreight.isPending}
             className="bg-white rounded-2xl p-4 text-left active:bg-gray-50 disabled:opacity-40 cursor-pointer flex items-center gap-3"
           >
-            <span className="w-11 h-11 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center text-xl" aria-hidden>📸</span>
+            <span className="w-11 h-11 flex items-center justify-center shrink-0" aria-hidden>
+              <img src={cameraFreightIcon} alt="" className="w-full h-full object-contain" />
+            </span>
             <span>
               <span className="block text-sm font-semibold text-gray-900">
                 {captureFreight.isPending ? 'Uploading…' : 'Capture Freight'}
@@ -301,7 +308,9 @@ export function Home({ driver, onGoToLoads, onOpenDriverMode }: {
             onClick={() => setCarrierLookupOpen(true)}
             className="bg-white rounded-2xl p-4 text-left active:bg-gray-50 cursor-pointer flex items-center gap-3 col-span-2"
           >
-            <span className="w-11 h-11 rounded-xl bg-green-100 text-green-700 flex items-center justify-center text-xl" aria-hidden>🔎</span>
+            <span className="w-11 h-11 flex items-center justify-center shrink-0" aria-hidden>
+              <img src={fmcsaIcon} alt="" className="w-full h-full object-contain" />
+            </span>
             <span>
               <span className="block text-sm font-semibold text-gray-900">Verify carrier / broker</span>
               <span className="block text-[11px] text-gray-500">FMCSA lookup by MC# or DOT#</span>
