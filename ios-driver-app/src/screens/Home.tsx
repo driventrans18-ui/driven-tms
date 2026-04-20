@@ -381,9 +381,9 @@ export function Home({ driver, onGoToLoads, onOpenDriverMode }: {
               if (activeLoad) setAiAssistLoadId(activeLoad.id)
               else setAiPickerOpen(true)
             }}
-            className="bg-white rounded-2xl p-4 text-left active:bg-gray-50 cursor-pointer flex items-center gap-3"
+            className="col-span-2 bg-white rounded-2xl p-4 text-left active:bg-gray-50 cursor-pointer flex items-center gap-3"
           >
-            <span className="w-11 h-11 flex items-center justify-center shrink-0" aria-hidden>
+            <span className="w-12 h-12 flex items-center justify-center shrink-0" aria-hidden>
               <img src={askAiIcon} alt="" className="w-full h-full object-contain" />
             </span>
             <span>
