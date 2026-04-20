@@ -1,4 +1,9 @@
-import { supabase } from './supabase'
+import { supabase, anonKeyIsLegacy } from './supabase'
+
+const LEGACY_KEY_HINT =
+  'Your Supabase anon key is the legacy JWT format (eyJ…). Replace VITE_SUPABASE_ANON_KEY ' +
+  'in ios-driver-app/.env with the sb_publishable_… key from Supabase → Project Settings → ' +
+  'API → "Publishable and secret API keys", then rebuild (npm run cap:sync).'
 
 // Client-side helpers for the AI edge functions. Each function is a thin
 // wrapper around a Supabase `functions.invoke(...)` call so callers don't
@@ -100,12 +105,17 @@ async function readErrorBody(error: unknown): Promise<string> {
   try { return await e.context.clone().text() } catch { return '' }
 }
 
-// Supabase's edge runtime rejects access_tokens signed under the old JWT
-// signing key with `UNAUTHORIZED_LEGACY_JWT`. A stored session from before
-// the project rotated keys will still pass database RLS checks but fails
-// every edge function. Refreshing the session mints a new token signed by
-// the current key; if refresh itself fails the user needs to re-auth.
+// Supabase's edge runtime rejects HS256-signed JWTs with UNAUTHORIZED_LEGACY_JWT.
+// Two failure paths:
+//   · apikey header is the legacy anon JWT (eyJ…) — only fix is updating .env
+//     with the sb_publishable_… key. Refresh cannot rewrite this header.
+//   · Authorization header is a stale access_token signed under the old
+//     signing key — refresh mints a new one and a retry succeeds.
+// We try refresh first; if the retry still returns UNAUTHORIZED_LEGACY_JWT,
+// the anon key is the problem and we surface an actionable message.
 async function invokeWithJwtRetry<T>(fn: string, body: unknown): Promise<T> {
+  if (anonKeyIsLegacy) throw new Error(LEGACY_KEY_HINT)
+
   let r = await supabase.functions.invoke(fn, { body })
   if (r.error) {
     const raw = await readErrorBody(r.error)
@@ -115,7 +125,11 @@ async function invokeWithJwtRetry<T>(fn: string, body: unknown): Promise<T> {
         throw new Error('Session expired — sign out from Profile and sign in again.')
       }
       r = await supabase.functions.invoke(fn, { body })
-      if (r.error) throw await expandFunctionError(r.error, fn)
+      if (r.error) {
+        const retryRaw = await readErrorBody(r.error)
+        if (retryRaw.includes('UNAUTHORIZED_LEGACY_JWT')) throw new Error(LEGACY_KEY_HINT)
+        throw await expandFunctionError(r.error, fn, retryRaw)
+      }
     } else {
       throw await expandFunctionError(r.error, fn, raw)
     }
