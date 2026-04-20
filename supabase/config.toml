@@ -1,0 +1,37 @@
+project_id = "iogzxhgbvhgujurhhzhv"
+
+# The AI edge functions all talk to the database with the SERVICE_ROLE_KEY
+# server-side — they don't read the caller's identity from the JWT. Skipping
+# gateway JWT verification sidesteps Supabase's UNAUTHORIZED_LEGACY_JWT /
+# UNSUPPORTED_TOKEN_ALGORITHM checks, which are triggered by mismatches
+# between the project's current JWT signing key and the edge runtime's
+# supported algorithms. Functions still require `apikey: sb_publishable_…`
+# so anonymous internet traffic is rejected by the gateway before reaching
+# our code.
+
+[functions.analyze-load]
+verify_jwt = false
+
+[functions.draft-load-message]
+verify_jwt = false
+
+[functions.draft-broker-email]
+verify_jwt = false
+
+[functions.parse-rate-con]
+verify_jwt = false
+
+[functions.parse-receipt]
+verify_jwt = false
+
+[functions.check-broker]
+verify_jwt = false
+
+[functions.polish-note]
+verify_jwt = false
+
+[functions.check-expirations]
+verify_jwt = false
+
+[functions.view-invoice]
+verify_jwt = false
