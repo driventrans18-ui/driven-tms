@@ -1,9 +1,13 @@
-import { supabase, anonKeyIsLegacy } from './supabase'
+import { supabase, anonKeyIsLegacy, anonKeyPrefix } from './supabase'
 
-const LEGACY_KEY_HINT =
-  'Your Supabase anon key is the legacy JWT format (eyJ…). Replace VITE_SUPABASE_ANON_KEY ' +
-  'in ios-driver-app/.env with the sb_publishable_… key from Supabase → Project Settings → ' +
-  'API → "Publishable and secret API keys", then rebuild (npm run cap:sync).'
+const LEGACY_KEY_HINT = (reason: 'preflight' | 'retry') =>
+  reason === 'preflight'
+    ? `[preflight] Running bundle has a legacy JWT anon key (starts with "${anonKeyPrefix}"). ` +
+      `Rebuild — .env is not what's baked into the app.`
+    : `[retry] Supabase rejected a fresh session access_token as UNAUTHORIZED_LEGACY_JWT ` +
+      `even after refreshSession(). Your anon key is fine ("${anonKeyPrefix}…") — this means ` +
+      `the project's JWT signing key is still the legacy HS256 secret. Rotate it in Supabase ` +
+      `Dashboard → Project Settings → API → JWT Keys, then sign in again.`
 
 // Client-side helpers for the AI edge functions. Each function is a thin
 // wrapper around a Supabase `functions.invoke(...)` call so callers don't
@@ -114,7 +118,7 @@ async function readErrorBody(error: unknown): Promise<string> {
 // We try refresh first; if the retry still returns UNAUTHORIZED_LEGACY_JWT,
 // the anon key is the problem and we surface an actionable message.
 async function invokeWithJwtRetry<T>(fn: string, body: Record<string, unknown>): Promise<T> {
-  if (anonKeyIsLegacy) throw new Error(LEGACY_KEY_HINT)
+  if (anonKeyIsLegacy) throw new Error(LEGACY_KEY_HINT('preflight'))
 
   let r = await supabase.functions.invoke(fn, { body })
   if (r.error) {
@@ -127,7 +131,7 @@ async function invokeWithJwtRetry<T>(fn: string, body: Record<string, unknown>):
       r = await supabase.functions.invoke(fn, { body })
       if (r.error) {
         const retryRaw = await readErrorBody(r.error)
-        if (retryRaw.includes('UNAUTHORIZED_LEGACY_JWT')) throw new Error(LEGACY_KEY_HINT)
+        if (retryRaw.includes('UNAUTHORIZED_LEGACY_JWT')) throw new Error(LEGACY_KEY_HINT('retry'))
         throw await expandFunctionError(r.error, fn, retryRaw)
       }
     } else {

@@ -8,6 +8,7 @@ const key = import.meta.env.VITE_SUPABASE_ANON_KEY as string
 // the new publishable key (sb_publishable_…) — refreshing the session cannot
 // rewrite the apikey header.
 export const anonKeyIsLegacy = !!key && key.startsWith('eyJ')
+export const anonKeyPrefix   = key ? key.slice(0, 12) : '(empty)'
 
 if (anonKeyIsLegacy) {
   console.error(
