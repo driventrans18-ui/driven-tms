@@ -14,6 +14,7 @@ import dieselIcon       from '../assets/quick-actions/diesel.png'
 import cameraFreightIcon from '../assets/quick-actions/camerafreight.png'
 import fmcsaIcon         from '../assets/quick-actions/fmcsa.png'
 import podScanIcon       from '../assets/quick-actions/podscan.png'
+import askAiIcon         from '../assets/quick-actions/askai.png'
 
 const ACTIVE_STATUSES = ['Assigned', 'In Transit']
 
@@ -382,12 +383,8 @@ export function Home({ driver, onGoToLoads, onOpenDriverMode }: {
             }}
             className="bg-white rounded-2xl p-4 text-left active:bg-gray-50 cursor-pointer flex items-center gap-3"
           >
-            <span
-              className="w-11 h-11 flex items-center justify-center shrink-0 rounded-full text-xl"
-              style={{ background: 'rgba(0, 168, 232, 0.12)' }}
-              aria-hidden
-            >
-              ✨
+            <span className="w-11 h-11 flex items-center justify-center shrink-0" aria-hidden>
+              <img src={askAiIcon} alt="" className="w-full h-full object-contain" />
             </span>
             <span>
               <span className="block text-sm font-semibold text-gray-900">Ask AI</span>
