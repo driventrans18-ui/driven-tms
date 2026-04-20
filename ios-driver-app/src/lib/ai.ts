@@ -113,7 +113,7 @@ async function readErrorBody(error: unknown): Promise<string> {
 //     signing key — refresh mints a new one and a retry succeeds.
 // We try refresh first; if the retry still returns UNAUTHORIZED_LEGACY_JWT,
 // the anon key is the problem and we surface an actionable message.
-async function invokeWithJwtRetry<T>(fn: string, body: unknown): Promise<T> {
+async function invokeWithJwtRetry<T>(fn: string, body: Record<string, unknown>): Promise<T> {
   if (anonKeyIsLegacy) throw new Error(LEGACY_KEY_HINT)
 
   let r = await supabase.functions.invoke(fn, { body })
