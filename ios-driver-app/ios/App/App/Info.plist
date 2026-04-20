@@ -45,5 +45,13 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>Driven uses the camera to capture time-stamped photos of freight, PODs, and fuel receipts you attach to loads and expenses.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Driven needs photo library access so you can attach existing receipts, PODs, and freight photos to your loads and expenses.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Driven saves copies of receipts, PODs, and load documents to your photo library when you choose to export them.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Driven uses your location to stamp pickup and delivery events on active loads and to calculate miles driven.</string>
 </dict>
 </plist>
