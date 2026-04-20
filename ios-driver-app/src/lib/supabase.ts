@@ -3,6 +3,20 @@ import { createClient } from '@supabase/supabase-js'
 const url = import.meta.env.VITE_SUPABASE_URL as string
 const key = import.meta.env.VITE_SUPABASE_ANON_KEY as string
 
+// Legacy (HS256-signed) anon JWTs still pass PostgREST but the edge-function
+// runtime rejects them with UNAUTHORIZED_LEGACY_JWT. The only fix is to use
+// the new publishable key (sb_publishable_…) — refreshing the session cannot
+// rewrite the apikey header.
+export const anonKeyIsLegacy = !!key && key.startsWith('eyJ')
+
+if (anonKeyIsLegacy) {
+  console.error(
+    '[supabase] VITE_SUPABASE_ANON_KEY is a legacy JWT (eyJ…). Edge functions ' +
+    'will return UNAUTHORIZED_LEGACY_JWT. Replace it with the sb_publishable_… ' +
+    'key from Supabase → Project Settings → API → "Publishable and secret API keys".'
+  )
+}
+
 // Supabase-js stores its session under keys like sb-<projectref>-auth-token.
 // If an earlier build shipped with a broken anon key, the stored token can
 // still carry that bad apikey and every request 401s with "Invalid API key".
